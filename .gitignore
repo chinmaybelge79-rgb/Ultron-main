@@ -1,0 +1,42 @@
+#Secrets
+.env
+.env.example
+
+# Memory database
+ultron_memory.db
+ultron_memory.db-*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.venv.broken/
+.venvtest/
+venv/
+*.egg-info/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Pre-repair backup (keep on disk, never commit)
+backup_pre_fix/
+
+# Logs (keep the dir, ignore contents)
+logs/*.log
+logs/*.log.*
+logs/archive/
+
+# TTS asset cache
+assets/cache/
+
+# Runtime data caches (keep the dirs, ignore contents)
+data/models/*
+data/projects/*
+!data/models/.gitkeep
+!data/projects/.gitkeep
+
+# OS
+.DS_Store
+logs/service.out
+logs/service.err

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ultron.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PROJECT_DIR__/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ultron.daemon</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__PROJECT_DIR__/logs/service.out</string>
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_DIR__/logs/service.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>ULTRON_ROUTING_POLICY</key>
+        <string>local_only</string>
+        <key>ULTRON_PROJECT_DIR</key>
+        <string>__PROJECT_DIR__</string>
+        <key>ULTRON_WAKE_WINDOW</key>
+        <string>2.0</string>
+    </dict>
+</dict>
+</plist>
