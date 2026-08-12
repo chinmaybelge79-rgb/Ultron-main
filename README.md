@@ -1,5 +1,6 @@
 <h1 color = black, align = centre >ULTRON</h1>
 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/43910764-b690-4d6c-9aa9-bf5dc271ac7a" />
 
 A production-ready, hands-free desktop AI operating system for macOS that behaves like JARVIS.
 
