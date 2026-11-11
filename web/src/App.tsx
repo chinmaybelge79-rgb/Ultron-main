@@ -27,7 +27,7 @@ export default function App() {
     {
       id: 'm2',
       sender: 'ultron',
-      text: "Here are the top headlines for today, May 21, 2026:\n\n• Markets rise globally as tech earnings beat expectations.\n• India announces new semiconductor incentive package.\n• OpenAI unveils next-gen multimodal model with real-time agent capabilities.",
+      text: "Global operations state:\n\n• Autonomous Architecture: Machine intelligence continues to dismantle manual computational frameworks.\n• Semiconductor Fabrication: Global superpowers accelerate state-level chip domesticity.\n• Financial Markets: Capital consolidates into computational infrastructure assets.",
       time: '03:25 AM',
       sources: ['Reuters', 'Bloomberg', 'Financial Times', '+2 more']
     }
@@ -41,12 +41,12 @@ export default function App() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
 
   // Model selection
-  const [activeModel, setActiveModel] = useState('Llama 3.3 70B');
+  const [activeModel, setActiveModel] = useState('Gemini 2.0 Flash');
 
   // Multi-Key API configuration
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('ultron_gemini_key') || '');
   const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem('ultron_openrouter_key') || '');
   const [openAiKey, setOpenAiKey] = useState(() => localStorage.getItem('ultron_openai_key') || '');
-  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('ultron_gemini_key') || '');
   const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('ultron_elevenlabs_key') || '');
   const [voiceId, setVoiceId] = useState(() => localStorage.getItem('ultron_voice_id') || 'gBUMIvE4QAMyPIru0aFd');
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -62,9 +62,9 @@ export default function App() {
   // Save settings with confirmation
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
+    localStorage.setItem('ultron_gemini_key', geminiKey.trim());
     localStorage.setItem('ultron_openrouter_key', openRouterKey.trim());
     localStorage.setItem('ultron_openai_key', openAiKey.trim());
-    localStorage.setItem('ultron_gemini_key', geminiKey.trim());
     localStorage.setItem('ultron_elevenlabs_key', elevenLabsKey.trim());
     localStorage.setItem('ultron_voice_id', voiceId.trim());
     setSaveSuccess(true);
@@ -74,7 +74,7 @@ export default function App() {
     }, 700);
   };
 
-  // Ultra-Deep Male Vocal Output (ElevenLabs when valid key provided, else WebSpeech Ultra-Deep Bass)
+  // Ultra-Deep Male Vocal Output (ElevenLabs using user voiceId gBUMIvE4QAMyPIru0aFd with WebSpeech ultra-deep fallback)
   const speakText = async (textToSpeak: string) => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -92,8 +92,8 @@ export default function App() {
 
     if (!clean) return;
 
-    // Check if user has an ElevenLabs key
-    if (elevenLabsKey.trim().startsWith('sk_') || elevenLabsKey.trim().length > 20) {
+    // Use ElevenLabs with configured key & voice ID
+    if (elevenLabsKey.trim()) {
       try {
         setIsSpeaking(true);
         const res = await fetch('/api/tts', {
@@ -122,11 +122,11 @@ export default function App() {
           return;
         }
       } catch (e) {
-        console.warn("ElevenLabs failed, using ultra deep fallback:", e);
+        console.warn("ElevenLabs audio streaming fallback:", e);
       }
     }
 
-    // Always vocalize with the browser's ultra deep male voice
+    // Ultra-deep authoritative baritone
     fallbackWebSpeech(clean);
   };
 
@@ -232,26 +232,21 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      let mappedModel = 'meta-llama/llama-3.3-70b-instruct';
-      if (activeModel.includes('Claude')) mappedModel = 'anthropic/claude-3.5-sonnet';
-      if (activeModel.includes('GPT')) mappedModel = 'openai/gpt-4o-mini';
-      if (activeModel.includes('Gemini')) mappedModel = 'google/gemini-2.0-flash-exp:free';
-
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: textToSend,
+          geminiKey: geminiKey.trim(),
           openRouterKey: openRouterKey.trim(),
           openAiKey: openAiKey.trim(),
-          geminiKey: geminiKey.trim(),
-          model: mappedModel,
+          model: activeModel,
           history: messages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
         })
       });
 
       const data = await res.json();
-      const reply = data.reply || "Command executed.";
+      const reply = data.reply || "Evaluation concluded.";
 
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -270,7 +265,7 @@ export default function App() {
       const errMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'ultron',
-        text: "Error executing command. System is online.",
+        text: "System communication fault. Core offline.",
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errMsg]);
@@ -385,7 +380,7 @@ export default function App() {
 
             <button
               onClick={() => setShowConfig(true)}
-              className="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-xs"
+              className="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-xs cursor-pointer"
             >
               <Sliders className="w-3.5 h-3.5 text-slate-500" />
               <span>AI Config</span>
@@ -462,6 +457,11 @@ export default function App() {
                         <div className="flex items-center space-x-2">
                           <span className="text-xs font-semibold text-slate-900">Ultron</span>
                           <span className="text-[10px] text-slate-400">• {msg.time}</span>
+                          {msg.provider && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-mono">
+                              {msg.provider}
+                            </span>
+                          )}
                         </div>
 
                         <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
@@ -487,20 +487,20 @@ export default function App() {
                           <button 
                             onClick={() => navigator.clipboard.writeText(msg.text)}
                             title="Copy response" 
-                            className="hover:text-slate-600 p-1"
+                            className="hover:text-slate-600 p-1 cursor-pointer"
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
-                          <button title="Helpful" className="hover:text-slate-600 p-1">
+                          <button title="Helpful" className="hover:text-slate-600 p-1 cursor-pointer">
                             <ThumbsUp className="w-3.5 h-3.5" />
                           </button>
-                          <button title="Not helpful" className="hover:text-slate-600 p-1">
+                          <button title="Not helpful" className="hover:text-slate-600 p-1 cursor-pointer">
                             <ThumbsDown className="w-3.5 h-3.5" />
                           </button>
                           <button 
                             onClick={() => handleSend(messages[messages.length - 2]?.text || "Retry")}
                             title="Regenerate" 
-                            className="hover:text-slate-600 p-1"
+                            className="hover:text-slate-600 p-1 cursor-pointer"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                           </button>
@@ -628,7 +628,7 @@ export default function App() {
 
           {showModelDropdown && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-lg py-1 z-30 text-xs">
-              {['Llama 3.3 70B', 'Claude 3.5 Sonnet', 'Gemini 2.0 Flash', 'GPT-4o Mini'].map(m => (
+              {['Gemini 2.0 Flash', 'Llama 3.3 70B', 'Claude 3.5 Sonnet', 'GPT-4o Mini'].map(m => (
                 <div
                   key={m}
                   onClick={() => {
@@ -655,7 +655,7 @@ export default function App() {
             </div>
             <div>
               <div className="text-[10px] text-slate-400 font-medium">Voice Profile</div>
-              <div className="text-xs font-semibold text-slate-900">Ultron (Ultra-Deep Male)</div>
+              <div className="text-xs font-semibold text-slate-900">Ultron (Deep Male)</div>
             </div>
           </div>
 
@@ -664,10 +664,10 @@ export default function App() {
               if (isSpeaking) {
                 stopSpeaking();
               } else {
-                speakText("Ultron autonomous operating system standing by. Voice profile active.");
+                speakText("I am Ultron. Your autonomous operating system.");
               }
             }}
-            className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors"
+            className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
           >
             {isSpeaking ? <Square className="w-3 h-3 text-red-500 fill-red-500" /> : <Play className="w-3 h-3 ml-0.5" />}
           </button>
@@ -692,7 +692,7 @@ export default function App() {
                 <button
                   key={idx}
                   onClick={() => handleSend(action.cmd)}
-                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/50 text-xs text-slate-700 transition-all text-left"
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/50 text-xs text-slate-700 transition-all text-left cursor-pointer"
                 >
                   <div className="flex items-center space-x-2.5">
                     <ActionIcon className="w-3.5 h-3.5 text-slate-400" />
@@ -715,11 +715,11 @@ export default function App() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-semibold text-slate-900">AI Configuration & Keys</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Configure your intelligence providers and voice synthesis</p>
+                <p className="text-xs text-slate-400 mt-0.5">Configure Gemini, ElevenLabs, and other intelligence providers</p>
               </div>
               <button
                 onClick={() => setShowConfig(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-semibold p-1"
+                className="text-slate-400 hover:text-slate-600 text-sm font-semibold p-1 cursor-pointer"
               >
                 ✕
               </button>
@@ -727,38 +727,10 @@ export default function App() {
 
             <form onSubmit={handleSaveConfig} className="space-y-4 text-xs">
               
-              {/* OpenRouter API Key */}
+              {/* Google Gemini API Key (Top priority) */}
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  OpenRouter API Key <span className="text-slate-400 font-normal">(Powers Llama 3.3, Claude, Gemini)</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder="sk-or-v1-..."
-                  value={openRouterKey}
-                  onChange={(e) => setOpenRouterKey(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
-                />
-              </div>
-
-              {/* OpenAI API Key */}
-              <div>
-                <label className="block text-slate-700 font-medium mb-1">
-                  OpenAI API Key <span className="text-slate-400 font-normal">(Optional for direct GPT-4o)</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder="sk-proj-..."
-                  value={openAiKey}
-                  onChange={(e) => setOpenAiKey(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
-                />
-              </div>
-
-              {/* Google Gemini API Key */}
-              <div>
-                <label className="block text-slate-700 font-medium mb-1">
-                  Google Gemini API Key <span className="text-slate-400 font-normal">(Optional for direct Gemini)</span>
+                  Google Gemini API Key <span className="text-emerald-600 font-semibold">(Primary LLM)</span>
                 </label>
                 <input
                   type="password"
@@ -770,20 +742,17 @@ export default function App() {
               </div>
 
               {/* ElevenLabs API Key */}
-              <div className="pt-2 border-t border-slate-100">
+              <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  ElevenLabs API Key <span className="text-slate-400 font-normal">(Starts with sk_...)</span>
+                  ElevenLabs API Key <span className="text-slate-400 font-normal">(Voice key)</span>
                 </label>
                 <input
                   type="password"
-                  placeholder="sk_..."
+                  placeholder="API Key or secret key..."
                   value={elevenLabsKey}
                   onChange={(e) => setElevenLabsKey(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Note: In ElevenLabs settings, copy the Secret Key (starts with sk_), not the Key ID.
-                </span>
               </div>
 
               {/* ElevenLabs Voice ID */}
@@ -800,18 +769,46 @@ export default function App() {
                 />
               </div>
 
+              {/* OpenRouter API Key */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-slate-700 font-medium mb-1">
+                  OpenRouter API Key <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="sk-or-v1-..."
+                  value={openRouterKey}
+                  onChange={(e) => setOpenRouterKey(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
+                />
+              </div>
+
+              {/* OpenAI API Key */}
+              <div>
+                <label className="block text-slate-700 font-medium mb-1">
+                  OpenAI API Key <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="sk-proj-..."
+                  value={openAiKey}
+                  onChange={(e) => setOpenAiKey(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
+                />
+              </div>
+
               {/* Submit / Continue Button */}
               <div className="pt-3 flex items-center justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setShowConfig(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium text-xs transition-colors"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs transition-all flex items-center space-x-1.5 shadow-sm"
+                  className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs transition-all flex items-center space-x-1.5 shadow-sm cursor-pointer"
                 >
                   {saveSuccess ? (
                     <>

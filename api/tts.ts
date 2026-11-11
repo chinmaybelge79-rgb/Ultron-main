@@ -33,7 +33,11 @@ export default async function handler(req: Request) {
     const xiKey = (apiKey || process.env.ELEVENLABS_API_KEY || '').trim();
     const vId = (voiceId || 'gBUMIvE4QAMyPIru0aFd').trim();
 
-    // Call ElevenLabs
+    if (!xiKey) {
+      return new Response(JSON.stringify({ error: 'API key required' }), { status: 400 });
+    }
+
+    // Call ElevenLabs with the specific voice ID provided by the user
     const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vId}`, {
       method: 'POST',
       headers: {
@@ -42,10 +46,12 @@ export default async function handler(req: Request) {
       },
       body: JSON.stringify({
         text: cleanText.slice(0, 800),
-        model_id: 'eleven_turbo_v2_5',
+        model_id: 'eleven_multilingual_v2',
         voice_settings: {
-          stability: 0.5,
+          stability: 0.45,
           similarity_boost: 0.85,
+          style: 0.2,
+          use_speaker_boost: true
         },
       }),
     });
