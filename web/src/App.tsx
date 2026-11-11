@@ -139,14 +139,15 @@ export default function App() {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
+    // Locate the deepest male resonant voice
     const deepVoice = voices.find(v => {
       const n = v.name.toLowerCase();
-      return n.includes('daniel') || n.includes('george') || n.includes('oliver') || n.includes('david') || n.includes('male');
+      return n.includes('daniel') || n.includes('george') || n.includes('oliver') || n.includes('david') || (n.includes('male') && v.lang.startsWith('en'));
     }) || voices[0];
 
     if (deepVoice) utterance.voice = deepVoice;
-    utterance.pitch = 0.52; // Ultra deep authoritative baritone
-    utterance.rate = 0.94;
+    utterance.pitch = 0.35; // Extra deep sinister Ultron pitch
+    utterance.rate = 0.90;  // Cold, deliberate, calculating pace
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);

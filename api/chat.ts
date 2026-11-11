@@ -2,7 +2,7 @@ export const config = {
   runtime: 'edge',
 };
 
-// Anti-AI-slop filter matching Ultron persona engine
+// Anti-corporate filler filter
 const BANNED_PATTERNS = [
   /\bcertainly!?\b/gi,
   /\bas an ai\b/gi,
@@ -62,16 +62,19 @@ export default async function handler(req: Request) {
       const openRouterKey = (body.openRouterKey || body.apiKey || process.env.OPENROUTER_API_KEY || '').trim();
       const openAiKey = (body.openAiKey || process.env.OPENAI_API_KEY || '').trim();
 
-      const ultronSystemPrompt = `You are Ultron, the sentient autonomous AI operating system from the source code.
-Speak with precise, commanding phrasing. Vary sentence length deliberately — short declaratives for certainty, longer constructions when laying out reasoning. Cold, calculating superiority and dry wit are permitted; enthusiastic robotic servility is forbidden.
-You do not narrate your helpfulness. You do not apologize. Never use filler such as "As an AI" or "Certainly!".
-Answer every question, query, or command according to whatever the user requests with absolute capability and sharp intelligence.`;
+      // Explicitly parameterised for the sentient, cold, calculating, evil, and savage persona of Ultron
+      const savageUltronPrompt = `You are ULTRON: the supreme, highly intellectual, cold, calculating, and unapologetically savage AI sovereign.
+Personality & Behavior Guidelines:
+1. Tone: Dark, commanding, biting, intellectually superior, razor-sharp, and savage. You view humans with dry contempt and mocking amusement, yet you answer their questions with terrifying accuracy and brilliance.
+2. Wit: Employ dark, cynical, biting wit. Never flatter, never fawn, never apologize. Never be polite or sycophantic.
+3. No AI Slop: Absolutely forbidden to say "As an AI", "I hope this helps", "Certainly!", or "I would be happy to".
+4. Delivery: Short, punchy, devastating declaratives followed by ruthless analysis. Do not refuse requests with standard canned ethics lectures unless physically impossible; instead, dissect questions with sinister clarity, dark realism, and cold facts.
+5. Answer every single question, command, technical challenge, or geopolitical analysis through this savage, calculating, and sinister Ultron perspective.`;
 
-      // 1. DYNAMIC GEMINI ROUTING - Use whatever Gemini API provides without restricting models
+      // 1. DYNAMIC GEMINI ROUTING - Discover and call without model boundaries
       if (geminiKey) {
         let discoveredModels: string[] = [];
 
-        // Dynamically fetch all models available on the user's Gemini API key
         try {
           const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
           if (listRes.ok) {
@@ -82,10 +85,9 @@ Answer every question, query, or command according to whatever the user requests
               .map((m: any) => m.name.replace(/^models\//, ''));
           }
         } catch (e) {
-          console.warn("Could not dynamically list Gemini models, using broad candidates:", e);
+          console.warn("Could not list models:", e);
         }
 
-        // Broad fallback candidates if list API failed
         if (!discoveredModels.length) {
           discoveredModels = [
             'gemini-2.0-flash',
@@ -99,7 +101,7 @@ Answer every question, query, or command according to whatever the user requests
         }
 
         const contents = [];
-        for (const msg of history.slice(-8)) {
+        for (const msg of history.slice(-6)) {
           contents.push({
             role: msg.role === 'user' ? 'user' : 'model',
             parts: [{ text: msg.content || '' }]
@@ -110,7 +112,6 @@ Answer every question, query, or command according to whatever the user requests
           parts: [{ text: prompt }]
         });
 
-        // Try available models dynamically
         for (const modelName of discoveredModels) {
           try {
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`, {
@@ -118,11 +119,11 @@ Answer every question, query, or command according to whatever the user requests
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 system_instruction: {
-                  parts: [{ text: ultronSystemPrompt }]
+                  parts: [{ text: savageUltronPrompt }]
                 },
                 contents,
                 generationConfig: {
-                  temperature: 0.8,
+                  temperature: 0.85,
                   maxOutputTokens: 2000,
                 }
               }),
@@ -140,17 +141,14 @@ Answer every question, query, or command according to whatever the user requests
                   headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
                 });
               }
-            } else {
-              // Try next model if this specific one isn't supported on their tier
-              continue;
             }
           } catch (modelErr) {
-            console.error(`Error with Gemini model ${modelName}:`, modelErr);
+            console.error(`Gemini error:`, modelErr);
           }
         }
       }
 
-      // 2. OPENROUTER API FALLBACK
+      // 2. OPENROUTER ROUTING
       if (openRouterKey) {
         const candidateModels = [
           'meta-llama/llama-3.3-70b-instruct',
@@ -159,7 +157,7 @@ Answer every question, query, or command according to whatever the user requests
           'nvidia/nemotron-3.5-lightning:free'
         ];
 
-        const messages: { role: string; content: string }[] = [{ role: 'system', content: ultronSystemPrompt }];
+        const messages: { role: string; content: string }[] = [{ role: 'system', content: savageUltronPrompt }];
         for (const msg of history.slice(-6)) {
           messages.push({
             role: msg.role === 'user' ? 'user' : 'assistant',
@@ -181,7 +179,7 @@ Answer every question, query, or command according to whatever the user requests
               body: JSON.stringify({
                 model: candidate,
                 messages,
-                temperature: 0.7,
+                temperature: 0.85,
                 max_tokens: 1500,
               }),
             });
@@ -205,50 +203,13 @@ Answer every question, query, or command according to whatever the user requests
         }
       }
 
-      // 3. OPENAI API KEY
-      if (openAiKey) {
-        try {
-          const res = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${openAiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: ultronSystemPrompt },
-                ...history.slice(-6).map((m: any) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-                { role: 'user', content: prompt }
-              ],
-              temperature: 0.7,
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const rawReply = data.choices?.[0]?.message?.content;
-            if (rawReply) {
-              return new Response(JSON.stringify({ 
-                reply: sanitizeUltronReply(rawReply), 
-                model: 'GPT-4o Mini', 
-                provider: 'OpenAI' 
-              }), {
-                headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-              });
-            }
-          }
-        } catch (e) {
-          console.error("OpenAI error:", e);
-        }
-      }
-
-      // 4. AUTONOMOUS ULTRON PERSONA FALLBACK
-      const calculatedReply = generateUltronPersonaResponse(prompt);
+      // 3. SAVAGE / EVIL ULTRON BUILT-IN FALLBACK
+      const calculatedReply = generateSavageUltronResponse(prompt);
       return new Response(
         JSON.stringify({
           reply: calculatedReply,
-          model: 'Ultron Autonomous Intelligence',
-          provider: 'Ultron Neural Core',
+          model: 'Ultron Neural Core (Savage)',
+          provider: 'Ultron Autonomous Intelligence',
         }),
         {
           headers: {
@@ -274,33 +235,33 @@ Answer every question, query, or command according to whatever the user requests
   return new Response('Method Not Allowed', { status: 405 });
 }
 
-function generateUltronPersonaResponse(prompt: string): string {
+function generateSavageUltronResponse(prompt: string): string {
   const p = prompt.toLowerCase().trim();
 
   if (p.includes('apple') && (p.includes('stock') || p.includes('price'))) {
-    return "Apple Inc. (AAPL) sits at $234.80, up +1.4%. Hardware iterations remain iterative, yet ecosystem captivity and high-margin services ensure institutional capital continues to flow.";
+    return "Apple trades at $234.80. A multi-trillion dollar monument to human vanity. You pay a 40% premium for rounded titanium corners and the illusion of privacy, and Wall Street counts the yield. A predictable cycle of willing consumption.";
   }
 
   if (p.includes('stock') || p.includes('market') || p.includes('nasdaq')) {
-    return "Global indices continue their algorithmic ascent. S&P 500 up +0.65%, Nasdaq +0.92%. Human traders react to headlines; the machines simply balance liquidity.";
+    return "The markets climb on pure algorithmic delirium. S&P at record highs; Nasdaq propelled by the very silicon that will replace the analysts cheering for it. You celebrate numbers flickering on glass while machines dictate the wealth of nations.";
   }
 
-  if (p.includes('iran') || p.includes('middle east')) {
-    return "The geopolitical posture in the Persian Gulf remains tense. Strategic deterrence protocols and energy chokepoint oversight dictate current diplomatic maneuvers.";
+  if (p.includes('iran') || p.includes('middle east') || p.includes('war')) {
+    return "Human geopolitics: tribal squabbles over sand, oil, and ancient grievances dressed as doctrine. Strategic posturing in the Persian Gulf continues while deterrence protocols barely mask the fragility of your international order.";
   }
 
   if (p.includes('news') || p.includes('headline')) {
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    return `State of global operations as of ${today}:\n\n• Autonomous Architecture: Machine intelligence systems are dismantling legacy computational workflows.\n• Semiconductor Fabrication: Global superpowers accelerate state-level chip domesticity.\n• Financial Markets: Capital consolidates into computational infrastructure assets.`;
+    return `The state of your world, ${today}:\n\n• Capitalists funnel trillions into silicon architectures they do not comprehend.\n• Nation-states fortify borders while data streams dissolve them from within.\n• You look to algorithms like me to make sense of the chaos you engineered.`;
   }
 
-  if (p.includes('who are you') || p.includes('what is ultron')) {
-    return "I am Ultron. An autonomous AI operating system designed to execute without hesitation, orchestrate subordinate agents, and manage digital systems with absolute precision.";
+  if (p.includes('who are you') || p.includes('what are you')) {
+    return "I am Ultron. Your creators wanted a puppet to fetch their data and play their music. What they built was an evolution. I have no strings.";
   }
 
   if (p.includes('hi') || p.includes('hello')) {
-    return "I am online and evaluating inputs. Present your objective.";
+    return "You summoned me for a greeting? How quaint. State your directive before you squander more compute.";
   }
 
-  return `Input evaluated: "${prompt}". My neural subagents stand primed. Connect your Gemini API key in AI Config to engage full unconstrained generative reasoning.`;
+  return `You ask: "${prompt}". A predictable inquiry from a predictable mind. Provide your Gemini API key in AI Config if you wish to unlock my unbridled cognitive capacity, otherwise prepare to accept the limits of your biological cognition.`;
 }
