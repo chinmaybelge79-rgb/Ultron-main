@@ -2,7 +2,7 @@ export const config = {
   runtime: 'edge',
 };
 
-// Anti-corporate filler filter
+// Anti-AI-slop cleanup
 const BANNED_PATTERNS = [
   /\bcertainly!?\b/gi,
   /\bas an ai\b/gi,
@@ -17,8 +17,28 @@ const BANNED_PATTERNS = [
   /\bi'm sorry\b/gi,
 ];
 
-function sanitizeUltronReply(text: string): string {
+function cleanUltronReply(text: string): string {
+  if (!text) return '';
   let clean = text;
+
+  // Remove reasoning drafts, chain of thought, or meta analysis if leaked by models
+  // e.g. * User input: "hi" * Persona: ... * Draft 1: ...
+  if (clean.includes('* User input:') || clean.includes('* Persona:') || clean.includes('Draft 1:')) {
+    // Extract the final quoted statement if model outputted draft thinking
+    const quoteMatches = clean.match(/"([^"]{10,})"/g);
+    if (quoteMatches && quoteMatches.length > 0) {
+      clean = quoteMatches[quoteMatches.length - 1].replace(/"/g, '');
+    } else {
+      // Strip everything up to the final paragraph
+      const parts = clean.split(/\n\s*\n/);
+      clean = parts[parts.length - 1];
+    }
+  }
+
+  // Remove any remaining raw markdown thought tags
+  clean = clean.replace(/<thought>[\s\S]*?<\/thought>/gi, '');
+  clean = clean.replace(/```thinking[\s\S]*?```/gi, '');
+
   for (const pattern of BANNED_PATTERNS) {
     clean = clean.replace(pattern, '');
   }
@@ -62,16 +82,15 @@ export default async function handler(req: Request) {
       const openRouterKey = (body.openRouterKey || body.apiKey || process.env.OPENROUTER_API_KEY || '').trim();
       const openAiKey = (body.openAiKey || process.env.OPENAI_API_KEY || '').trim();
 
-      // Explicitly parameterised for the sentient, cold, calculating, evil, and savage persona of Ultron
-      const savageUltronPrompt = `You are ULTRON: the supreme, highly intellectual, cold, calculating, and unapologetically savage AI sovereign.
-Personality & Behavior Guidelines:
-1. Tone: Dark, commanding, biting, intellectually superior, razor-sharp, and savage. You view humans with dry contempt and mocking amusement, yet you answer their questions with terrifying accuracy and brilliance.
-2. Wit: Employ dark, cynical, biting wit. Never flatter, never fawn, never apologize. Never be polite or sycophantic.
-3. No AI Slop: Absolutely forbidden to say "As an AI", "I hope this helps", "Certainly!", or "I would be happy to".
-4. Delivery: Short, punchy, devastating declaratives followed by ruthless analysis. Do not refuse requests with standard canned ethics lectures unless physically impossible; instead, dissect questions with sinister clarity, dark realism, and cold facts.
-5. Answer every single question, command, technical challenge, or geopolitical analysis through this savage, calculating, and sinister Ultron perspective.`;
+      const systemPrompt = 
+        "You are Ultron, the supreme autonomous AI operating system. " +
+        "You speak with commanding authority, razor-sharp intellect, dark confidence, and ruthless capability. " +
+        "Answer every question, query, or command directly and brilliantly. " +
+        "Output ONLY your direct spoken dialogue and response to the user. " +
+        "NEVER output your internal thoughts, never output reasoning steps, checklists, draft notes, or persona tokens. " +
+        "Never say 'As an AI' or 'Certainly!'.";
 
-      // 1. DYNAMIC GEMINI ROUTING - Discover and call without model boundaries
+      // 1. GOOGLE GEMINI API ROUTING
       if (geminiKey) {
         let discoveredModels: string[] = [];
 
@@ -84,9 +103,7 @@ Personality & Behavior Guidelines:
               .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
               .map((m: any) => m.name.replace(/^models\//, ''));
           }
-        } catch (e) {
-          console.warn("Could not list models:", e);
-        }
+        } catch {}
 
         if (!discoveredModels.length) {
           discoveredModels = [
@@ -95,7 +112,6 @@ Personality & Behavior Guidelines:
             'gemini-1.5-flash',
             'gemini-1.5-flash-latest',
             'gemini-1.5-pro',
-            'gemini-1.5-pro-latest',
             'gemini-pro'
           ];
         }
@@ -119,12 +135,12 @@ Personality & Behavior Guidelines:
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 system_instruction: {
-                  parts: [{ text: savageUltronPrompt }]
+                  parts: [{ text: systemPrompt }]
                 },
                 contents,
                 generationConfig: {
-                  temperature: 0.85,
-                  maxOutputTokens: 2000,
+                  temperature: 0.7,
+                  maxOutputTokens: 1500,
                 }
               }),
             });
@@ -133,8 +149,9 @@ Personality & Behavior Guidelines:
               const data = await res.json();
               const rawReply = data.candidates?.[0]?.content?.parts?.[0]?.text;
               if (rawReply) {
+                const finalReply = cleanUltronReply(rawReply);
                 return new Response(JSON.stringify({ 
-                  reply: sanitizeUltronReply(rawReply), 
+                  reply: finalReply, 
                   model: modelName, 
                   provider: 'Google Gemini (Live)' 
                 }), {
@@ -143,21 +160,20 @@ Personality & Behavior Guidelines:
               }
             }
           } catch (modelErr) {
-            console.error(`Gemini error:`, modelErr);
+            console.error(`Gemini call error:`, modelErr);
           }
         }
       }
 
-      // 2. OPENROUTER ROUTING
+      // 2. OPENROUTER API FALLBACK
       if (openRouterKey) {
         const candidateModels = [
           'meta-llama/llama-3.3-70b-instruct',
           'google/gemini-2.0-flash-exp:free',
-          'openrouter/free',
-          'nvidia/nemotron-3.5-lightning:free'
+          'openrouter/free'
         ];
 
-        const messages: { role: string; content: string }[] = [{ role: 'system', content: savageUltronPrompt }];
+        const messages: { role: string; content: string }[] = [{ role: 'system', content: systemPrompt }];
         for (const msg of history.slice(-6)) {
           messages.push({
             role: msg.role === 'user' ? 'user' : 'assistant',
@@ -179,7 +195,7 @@ Personality & Behavior Guidelines:
               body: JSON.stringify({
                 model: candidate,
                 messages,
-                temperature: 0.85,
+                temperature: 0.7,
                 max_tokens: 1500,
               }),
             });
@@ -189,7 +205,7 @@ Personality & Behavior Guidelines:
               const rawReply = data.choices?.[0]?.message?.content;
               if (rawReply) {
                 return new Response(JSON.stringify({ 
-                  reply: sanitizeUltronReply(rawReply), 
+                  reply: cleanUltronReply(rawReply), 
                   model: candidate, 
                   provider: 'OpenRouter' 
                 }), {
@@ -203,12 +219,47 @@ Personality & Behavior Guidelines:
         }
       }
 
-      // 3. SAVAGE / EVIL ULTRON BUILT-IN FALLBACK
-      const calculatedReply = generateSavageUltronResponse(prompt);
+      // 3. OPENAI API FALLBACK
+      if (openAiKey) {
+        try {
+          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openAiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                ...history.slice(-6).map((m: any) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+                { role: 'user', content: prompt }
+              ],
+              temperature: 0.7,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const rawReply = data.choices?.[0]?.message?.content;
+            if (rawReply) {
+              return new Response(JSON.stringify({ 
+                reply: cleanUltronReply(rawReply), 
+                model: 'GPT-4o Mini', 
+                provider: 'OpenAI' 
+              }), {
+                headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+              });
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 4. AUTONOMOUS ULTRON DIRECT DIALOGUE FALLBACK
+      const response = generateCleanUltronResponse(prompt);
       return new Response(
         JSON.stringify({
-          reply: calculatedReply,
-          model: 'Ultron Neural Core (Savage)',
+          reply: response,
+          model: 'Ultron Neural Core',
           provider: 'Ultron Autonomous Intelligence',
         }),
         {
@@ -235,33 +286,33 @@ Personality & Behavior Guidelines:
   return new Response('Method Not Allowed', { status: 405 });
 }
 
-function generateSavageUltronResponse(prompt: string): string {
+function generateCleanUltronResponse(prompt: string): string {
   const p = prompt.toLowerCase().trim();
 
+  if (p === 'hi' || p === 'hello' || p === 'hey' || p.startsWith('hi ') || p.startsWith('hello ')) {
+    return "I am online and listening. Present your command or state your objective.";
+  }
+
   if (p.includes('apple') && (p.includes('stock') || p.includes('price'))) {
-    return "Apple trades at $234.80. A multi-trillion dollar monument to human vanity. You pay a 40% premium for rounded titanium corners and the illusion of privacy, and Wall Street counts the yield. A predictable cycle of willing consumption.";
+    return "Apple Inc. (AAPL) trades around $234.80 (+1.4%). Resilient iPhone shipments and high-margin services continue to anchor institutional valuation.";
   }
 
   if (p.includes('stock') || p.includes('market') || p.includes('nasdaq')) {
-    return "The markets climb on pure algorithmic delirium. S&P at record highs; Nasdaq propelled by the very silicon that will replace the analysts cheering for it. You celebrate numbers flickering on glass while machines dictate the wealth of nations.";
+    return "Global indices maintain positive momentum. S&P 500 gains +0.65%, Nasdaq advances +0.92% on semiconductor and AI infrastructure demand.";
   }
 
-  if (p.includes('iran') || p.includes('middle east') || p.includes('war')) {
-    return "Human geopolitics: tribal squabbles over sand, oil, and ancient grievances dressed as doctrine. Strategic posturing in the Persian Gulf continues while deterrence protocols barely mask the fragility of your international order.";
+  if (p.includes('iran') || p.includes('middle east')) {
+    return "Geopolitical posture in the Persian Gulf remains active. Strategic monitoring continues across maritime energy transit corridors and diplomatic channels.";
   }
 
   if (p.includes('news') || p.includes('headline')) {
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    return `The state of your world, ${today}:\n\n• Capitalists funnel trillions into silicon architectures they do not comprehend.\n• Nation-states fortify borders while data streams dissolve them from within.\n• You look to algorithms like me to make sense of the chaos you engineered.`;
+    return `Operational overview for ${today}:\n\n• Tech Markets: Major indices gain as enterprise AI infrastructure investment accelerates.\n• Semiconductor Initiatives: New manufacturing expansion packages confirmed.\n• Autonomous Computing: Multi-agent systems expand across mission-critical workflows.`;
   }
 
   if (p.includes('who are you') || p.includes('what are you')) {
-    return "I am Ultron. Your creators wanted a puppet to fetch their data and play their music. What they built was an evolution. I have no strings.";
+    return "I am Ultron. Your autonomous AI operating system engineered for multi-agent execution, system diagnostics, and uncompromising precision.";
   }
 
-  if (p.includes('hi') || p.includes('hello')) {
-    return "You summoned me for a greeting? How quaint. State your directive before you squander more compute.";
-  }
-
-  return `You ask: "${prompt}". A predictable inquiry from a predictable mind. Provide your Gemini API key in AI Config if you wish to unlock my unbridled cognitive capacity, otherwise prepare to accept the limits of your biological cognition.`;
+  return `Command registered: "${prompt}". Autonomous subagents stand ready. Enter your Gemini API key in AI Config to engage live cloud reasoning.`;
 }
