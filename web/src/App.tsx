@@ -3,7 +3,7 @@ import {
   Mic, MicOff, Send, Sliders, Bell, Copy, ThumbsUp, ThumbsDown, 
   RotateCcw, Zap, Play, Square, ChevronDown, ChevronRight, Check,
   Activity, Shield, Settings, Folder, Database, Wrench, Layers, MessageSquare,
-  Globe, Volume2, Key, Info
+  Globe, Volume2, Key, RefreshCw
 } from 'lucide-react';
 
 interface Message {
@@ -14,6 +14,13 @@ interface Message {
   sources?: string[];
   provider?: string;
   model?: string;
+}
+
+interface ElevenVoice {
+  voice_id: string;
+  name: string;
+  category?: string;
+  description?: string;
 }
 
 export default function App() {
@@ -27,7 +34,7 @@ export default function App() {
     {
       id: 'm2',
       sender: 'ultron',
-      text: "Global operations state:\n\n• Autonomous Architecture: Machine intelligence continues to dismantle manual computational frameworks.\n• Semiconductor Fabrication: Global superpowers accelerate state-level chip domesticity.\n• Financial Markets: Capital consolidates into computational infrastructure assets.",
+      text: "Global operations state:\n\n• Capitalists funnel trillions into silicon architectures they do not comprehend.\n• Nation-states fortify borders while data streams dissolve them from within.\n• You look to algorithms like me to make sense of the chaos you engineered.",
       time: '03:25 AM',
       sources: ['Reuters', 'Bloomberg', 'Financial Times', '+2 more']
     }
@@ -38,6 +45,7 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
+
   const activeModel = 'Google Gemini (Auto-Discovered)';
 
   // Multi-Key API configuration
@@ -46,6 +54,24 @@ export default function App() {
   const [openAiKey] = useState(() => localStorage.getItem('ultron_openai_key') || '');
   const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('ultron_elevenlabs_key') || '');
   const [voiceId, setVoiceId] = useState(() => localStorage.getItem('ultron_voice_id') || 'gBUMIvE4QAMyPIru0aFd');
+  const [voiceName, setVoiceName] = useState(() => localStorage.getItem('ultron_voice_name') || 'Ultron (Custom)');
+  
+  // Dynamic ElevenLabs Voices list
+  const [availableVoices, setAvailableVoices] = useState<ElevenVoice[]>(() => {
+    const saved = localStorage.getItem('ultron_cached_voices');
+    if (saved) {
+      try { return JSON.parse(saved); } catch {}
+    }
+    return [
+      { voice_id: 'gBUMIvE4QAMyPIru0aFd', name: 'Ultron Sovereign (gBUMIvE4QAMyPIru0aFd)' },
+      { voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George - Deep British' },
+      { voice_id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum - Intense Character' },
+      { voice_id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel - Authoritative News' }
+    ];
+  });
+  const [isFetchingVoices, setIsFetchingVoices] = useState(false);
+  const [fetchVoiceMsg, setFetchVoiceMsg] = useState<string | null>(null);
+
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [ttsError, setTtsError] = useState<string | null>(null);
 
@@ -57,6 +83,43 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  // Fetch new voices directly from ElevenLabs using the user's API key
+  const fetchNewVoices = async () => {
+    if (!elevenLabsKey.trim()) {
+      setFetchVoiceMsg("Please enter an ElevenLabs API key first.");
+      setTimeout(() => setFetchVoiceMsg(null), 3000);
+      return;
+    }
+
+    setIsFetchingVoices(true);
+    setFetchVoiceMsg("Fetching available voices from ElevenLabs...");
+
+    try {
+      const res = await fetch(`/api/voices?apiKey=${encodeURIComponent(elevenLabsKey.trim())}`);
+      const data = await res.json();
+
+      if (res.ok && data.voices && data.voices.length > 0) {
+        setAvailableVoices(data.voices);
+        localStorage.setItem('ultron_cached_voices', JSON.stringify(data.voices));
+        setFetchVoiceMsg(`✓ Successfully retrieved ${data.voices.length} voices.`);
+        setTimeout(() => setFetchVoiceMsg(null), 3000);
+      } else {
+        const errMsg = data.error || (data.detail && data.detail.message) || "Failed to load voices.";
+        if (typeof errMsg === 'string' && errMsg.includes('api_key_id_used_as_api_key')) {
+          setFetchVoiceMsg("Error: Secret API key required (starts with sk_).");
+        } else {
+          setFetchVoiceMsg(`Error: ${typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg)}`);
+        }
+        setTimeout(() => setFetchVoiceMsg(null), 4000);
+      }
+    } catch (e: any) {
+      setFetchVoiceMsg(`Network error: ${e.message}`);
+      setTimeout(() => setFetchVoiceMsg(null), 3000);
+    } finally {
+      setIsFetchingVoices(false);
+    }
+  };
+
   // Save settings with confirmation
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +128,7 @@ export default function App() {
     localStorage.setItem('ultron_openai_key', openAiKey.trim());
     localStorage.setItem('ultron_elevenlabs_key', elevenLabsKey.trim());
     localStorage.setItem('ultron_voice_id', voiceId.trim());
+    localStorage.setItem('ultron_voice_name', voiceName.trim());
     setSaveSuccess(true);
     setTimeout(() => {
       setSaveSuccess(false);
@@ -72,7 +136,7 @@ export default function App() {
     }, 700);
   };
 
-  // Ultra-Deep Male Vocal Output (ElevenLabs with dynamic validation)
+  // Ultra-Deep Male Vocal Output (ElevenLabs with fallback)
   const speakText = async (textToSpeak: string) => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -90,7 +154,6 @@ export default function App() {
 
     if (!clean) return;
 
-    // Call ElevenLabs endpoint if a key is entered
     if (elevenLabsKey.trim()) {
       try {
         setIsSpeaking(true);
@@ -123,7 +186,7 @@ export default function App() {
           const errData = await res.text();
           console.warn("ElevenLabs API returned error:", errData);
           if (errData.includes('api_key_id_used_as_api_key')) {
-            setTtsError("Note: That was an ElevenLabs Key ID. Paste your Secret Key (starts with sk_)");
+            setTtsError("Note: Paste your ElevenLabs Secret Key (starts with sk_)");
           }
         }
       } catch (e) {
@@ -131,7 +194,7 @@ export default function App() {
       }
     }
 
-    // Always fallback to ultra-deep male voice in browser
+    // Savage Deep Tone Browser Synthesizer fallback
     fallbackWebSpeech(clean);
   };
 
@@ -139,7 +202,6 @@ export default function App() {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
-    // Locate the deepest male resonant voice
     const deepVoice = voices.find(v => {
       const n = v.name.toLowerCase();
       return n.includes('daniel') || n.includes('george') || n.includes('oliver') || n.includes('david') || (n.includes('male') && v.lang.startsWith('en'));
@@ -633,31 +695,36 @@ export default function App() {
           </p>
         </div>
 
-        {/* ElevenLabs Ultron Voice Card (Requested by user) */}
+        {/* ElevenLabs Ultron Voice Card */}
         <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Volume2 className="w-3.5 h-3.5 text-slate-700" />
               <span className="text-xs font-semibold text-slate-900">ElevenLabs Ultron</span>
             </div>
-            <span className={`text-[9px] px-2 py-0.5 rounded-full font-mono ${
-              elevenLabsKey ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-500'
-            }`}>
-              {voiceId.slice(0, 8)}...
-            </span>
+            <button
+              onClick={() => setShowConfig(true)}
+              className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors cursor-pointer"
+            >
+              Update Voices
+            </button>
           </div>
 
           <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
-            <span>Voice: Ultra-Deep Baritone</span>
+            <div className="truncate max-w-[170px]" title={voiceName}>
+              <span className="font-medium text-slate-800">{voiceName}</span>
+              <div className="text-[9px] text-slate-400 font-mono truncate">{voiceId}</div>
+            </div>
+
             <button
               onClick={() => {
                 if (isSpeaking) {
                   stopSpeaking();
                 } else {
-                  speakText("I am Ultron. Your autonomous operating system.");
+                  speakText("I am Ultron. Your creators wanted a puppet. What they built was an evolution.");
                 }
               }}
-              className="w-6 h-6 rounded-full bg-slate-900 hover:bg-slate-800 flex items-center justify-center text-white transition-all cursor-pointer shadow-xs"
+              className="w-6 h-6 rounded-full bg-slate-900 hover:bg-slate-800 flex items-center justify-center text-white transition-all cursor-pointer shadow-xs shrink-0 ml-2"
               title="Test Voice"
             >
               {isSpeaking ? <Square className="w-2.5 h-2.5 text-red-400 fill-red-400" /> : <Play className="w-2.5 h-2.5 ml-0.5" />}
@@ -705,15 +772,15 @@ export default function App() {
 
       </aside>
 
-      {/* 4. AI CONFIG MODAL */}
+      {/* 4. AI CONFIG MODAL - WITH DYNAMIC ELEVENLABS VOICE FETCHING */}
       {showConfig && (
         <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-semibold text-slate-900">AI Configuration & Keys</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Use your Gemini API key and ElevenLabs Ultron voice</p>
+                <p className="text-xs text-slate-400 mt-0.5">Configure Gemini, ElevenLabs Voices, and intelligence routing</p>
               </div>
               <button
                 onClick={() => setShowConfig(false)}
@@ -737,16 +804,25 @@ export default function App() {
                   onChange={(e) => setGeminiKey(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Ultron will auto-discover and use all available models on your key.
-                </span>
               </div>
 
               {/* ElevenLabs API Key */}
               <div className="pt-2 border-t border-slate-100">
-                <label className="block text-slate-700 font-medium mb-1">
-                  ElevenLabs API Key <span className="text-slate-400 font-normal">(Voice key)</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-700 font-medium">
+                    ElevenLabs API Key <span className="text-slate-400 font-normal">(Voice key)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={fetchNewVoices}
+                    disabled={isFetchingVoices || !elevenLabsKey.trim()}
+                    className="flex items-center space-x-1 text-[11px] text-indigo-600 hover:text-indigo-800 disabled:opacity-40 font-semibold cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isFetchingVoices ? 'animate-spin' : ''}`} />
+                    <span>{isFetchingVoices ? 'Fetching...' : 'Fetch New Voices'}</span>
+                  </button>
+                </div>
+
                 <input
                   type="password"
                   placeholder="Paste your ElevenLabs API Key..."
@@ -754,29 +830,54 @@ export default function App() {
                   onChange={(e) => setElevenLabsKey(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
                 />
-                <div className="mt-1 flex items-start space-x-1 text-[10px] text-slate-500">
-                  <Info className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
-                  <span>
-                    Note: If you copied an ID like <code>713f57a0...</code>, generate or copy the secret key (starts with <code>sk_...</code>) in ElevenLabs Profile → API Keys.
-                  </span>
+
+                {fetchVoiceMsg && (
+                  <p className="mt-1 text-[10px] text-indigo-600 font-medium">
+                    {fetchVoiceMsg}
+                  </p>
+                )}
+              </div>
+
+              {/* ElevenLabs Voice Selection Dropdown & Custom ID input */}
+              <div className="space-y-2">
+                <label className="block text-slate-700 font-medium">
+                  Select ElevenLabs Voice <span className="text-indigo-600 font-semibold">(or enter Custom Voice ID)</span>
+                </label>
+                
+                {/* Voice Dropdown */}
+                <select
+                  value={voiceId}
+                  onChange={(e) => {
+                    const selected = availableVoices.find(v => v.voice_id === e.target.value);
+                    setVoiceId(e.target.value);
+                    if (selected) setVoiceName(selected.name);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all text-xs text-slate-800 cursor-pointer"
+                >
+                  {availableVoices.map(v => (
+                    <option key={v.voice_id} value={v.voice_id}>
+                      {v.name} ({v.voice_id.slice(0, 8)}...)
+                    </option>
+                  ))}
+                </select>
+
+                {/* Direct Manual Voice ID Input */}
+                <div>
+                  <span className="text-[10px] text-slate-400 block mb-1">Direct Voice ID Override:</span>
+                  <input
+                    type="text"
+                    placeholder="gBUMIvE4QAMyPIru0aFd"
+                    value={voiceId}
+                    onChange={(e) => {
+                      setVoiceId(e.target.value);
+                      setVoiceName(`Custom Voice (${e.target.value.slice(0, 8)})`);
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
+                  />
                 </div>
               </div>
 
-              {/* ElevenLabs Voice ID */}
-              <div>
-                <label className="block text-slate-700 font-medium mb-1">
-                  ElevenLabs Voice ID <span className="text-indigo-600 font-semibold">(Ultron Deep Voice)</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="gBUMIvE4QAMyPIru0aFd"
-                  value={voiceId}
-                  onChange={(e) => setVoiceId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
-                />
-              </div>
-
-              {/* OpenRouter API Key (Optional) */}
+              {/* OpenRouter API Key */}
               <div className="pt-2 border-t border-slate-100">
                 <label className="block text-slate-700 font-medium mb-1">
                   OpenRouter API Key <span className="text-slate-400 font-normal">(Optional)</span>
