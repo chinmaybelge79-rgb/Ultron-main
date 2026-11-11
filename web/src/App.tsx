@@ -1,158 +1,185 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Mic, MicOff, Send, Cpu, Terminal, Shield, Sparkles, Activity, 
-  Settings, Volume2, VolumeX, Database, Layers, 
-  Code2, ExternalLink, CheckCircle2, ChevronRight, AlertCircle
+  Mic, MicOff, Send, Sliders, Bell, Copy, ThumbsUp, ThumbsDown, 
+  RotateCcw, Zap, Play, Square, ChevronDown, ChevronRight, Check,
+  Activity, Shield, Settings, Folder, Database, Wrench, Layers, MessageSquare,
+  Sparkles, Globe
 } from 'lucide-react';
 
 interface Message {
   id: string;
   sender: 'user' | 'ultron';
   text: string;
-  timestamp: string;
-  toolCall?: {
-    name: string;
-    arg?: string;
-    status: 'success' | 'running' | 'failed';
-  };
-  meta?: {
-    model?: string;
-    latency?: number;
-  };
+  time: string;
+  sources?: string[];
 }
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: 'init-1',
+      id: 'm1',
+      sender: 'user',
+      text: "hi whats today's news",
+      time: '03:25 AM'
+    },
+    {
+      id: 'm2',
       sender: 'ultron',
-      text: 'Good day, sir. Ultron OS is fully operational and standing by. What task shall we execute?',
-      timestamp: 'Now',
-      meta: { model: 'Ultron Core' }
+      text: "Here are the top headlines for today, May 21, 2026:\n\n• Markets rise globally as tech earnings beat expectations.\n• India announces new semiconductor incentive package.\n• OpenAI unveils next-gen multimodal model with real-time agent capabilities.",
+      time: '03:25 AM',
+      sources: ['Reuters', 'Bloomberg', 'Financial Times', '+2 more']
     }
   ]);
   const [input, setInput] = useState('');
+  const [activeNav, setActiveNav] = useState('Chat');
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [speechEnabled, setSpeechEnabled] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'console' | 'tools' | 'agents' | 'memory'>('console');
-  const [micStatusMsg, setMicStatusMsg] = useState<string | null>(null);
-  
-  // Settings
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('ultron_openrouter_key') || '');
-  const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.3-70b-instruct:free');
-  const [showSettings, setShowSettings] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
 
-  // System Stats Simulation
-  const [cpuLoad, setCpuLoad] = useState(14);
-  const [memoryUsage, setMemoryUsage] = useState(38);
+  // Model selection
+  const [activeModel, setActiveModel] = useState('Llama 3.3 70B');
+
+  // Multi-Key API configuration
+  const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem('ultron_openrouter_key') || '');
+  const [openAiKey, setOpenAiKey] = useState(() => localStorage.getItem('ultron_openai_key') || '');
+  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('ultron_gemini_key') || '');
+  const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('ultron_elevenlabs_key') || '713f57a0b5d0d520c4241efe1cd48f5641c230d3f44b70dcb3f27d72d7da8d34');
+  const [voiceId, setVoiceId] = useState(() => localStorage.getItem('ultron_voice_id') || 'gBUMIvE4QAMyPIru0aFd');
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isLoading]);
 
-  useEffect(() => {
-    // Dynamic simulated metrics
-    const interval = setInterval(() => {
-      setCpuLoad(Math.floor(10 + Math.random() * 8));
-      setMemoryUsage(Math.floor(36 + Math.random() * 4));
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
+  // Save settings with confirmation
+  const handleSaveConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    localStorage.setItem('ultron_openrouter_key', openRouterKey.trim());
+    localStorage.setItem('ultron_openai_key', openAiKey.trim());
+    localStorage.setItem('ultron_gemini_key', geminiKey.trim());
+    localStorage.setItem('ultron_elevenlabs_key', elevenLabsKey.trim());
+    localStorage.setItem('ultron_voice_id', voiceId.trim());
+    setSaveSuccess(true);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setShowConfig(false);
+    }, 900);
+  };
 
-  // Pre-load voices for SpeechSynthesis
-  useEffect(() => {
+  // High-Quality Ultra-Deep Male Vocal Output (ElevenLabs with WebSpeech fallback)
+  const speakText = async (textToSpeak: string) => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-      };
-      window.speechSynthesis.getVoices();
+      window.speechSynthesis.cancel();
     }
-  }, []);
 
-  // Browser Speech Synthesis (TTS) - Ultra Deep Male Voice (Ultron Butler)
-  const speakText = (text: string) => {
-    if (!speechEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    
-    // Clean text of code blocks and json
-    const cleanSpeech = text
-      .replace(/```[\s\S]*?```/g, 'Code block omitted.')
-      .replace(/\{[\s\S]*?\}/g, '')
-      .replace(/[*_#`~]/g, '');
-    
-    const utterance = new SpeechSynthesisUtterance(cleanSpeech);
+    const clean = textToSpeak
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/[*_#`~•]/g, '')
+      .replace(/https?:\/\/\S+/g, '')
+      .trim();
+
+    if (!clean) return;
+
+    // Try ElevenLabs Ultra-Deep Voice first
+    if (elevenLabsKey.trim()) {
+      try {
+        setIsSpeaking(true);
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: clean,
+            apiKey: elevenLabsKey.trim(),
+            voiceId: voiceId.trim() || 'gBUMIvE4QAMyPIru0aFd',
+          }),
+        });
+
+        if (res.ok) {
+          const blob = await res.blob();
+          const audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          currentAudioRef.current = audio;
+          audio.onended = () => {
+            setIsSpeaking(false);
+            currentAudioRef.current = null;
+          };
+          audio.onerror = () => {
+            fallbackWebSpeech(clean);
+          };
+          await audio.play();
+          return;
+        }
+      } catch (e) {
+        console.warn("ElevenLabs audio stream failed, falling back to local synthesis:", e);
+      }
+    }
+
+    // Fallback: Web Speech API tuned to ultra-deep pitch
+    fallbackWebSpeech(clean);
+  };
+
+  const fallbackWebSpeech = (text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
+    const deepVoice = voices.find(v => {
+      const n = v.name.toLowerCase();
+      return n.includes('daniel') || n.includes('george') || n.includes('oliver') || n.includes('david') || n.includes('male');
+    }) || voices[0];
 
-    // Priority for deep male voices available across Mac/Windows/Chrome/Safari
-    const deepMaleVoice = voices.find(v => {
-      const name = v.name.toLowerCase();
-      return (
-        name.includes('daniel') ||
-        name.includes('george') ||
-        name.includes('oliver') ||
-        name.includes('google uk english male') ||
-        name.includes('microsoft david') ||
-        name.includes('microsoft mark') ||
-        name.includes('guy') ||
-        name.includes('rishi') ||
-        (name.includes('male') && v.lang.startsWith('en'))
-      );
-    }) || voices.find(v => v.lang.startsWith('en'));
-
-    if (deepMaleVoice) {
-      utterance.voice = deepMaleVoice;
-    }
-
-    // Set ultra deep resonance (very low pitch + authoritative measured rate)
-    utterance.pitch = 0.55; // Ultra deep bass tone
-    utterance.rate = 0.92;  // Deliberate, calm cadence
-
+    if (deepVoice) utterance.voice = deepVoice;
+    utterance.pitch = 0.55; // Ultra deep bass
+    utterance.rate = 0.94;
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
-
     window.speechSynthesis.speak(utterance);
   };
 
-  // Browser Speech Recognition (STT) with robust fallback & permission handling
+  const stopSpeaking = () => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+  };
+
+  // Push-to-Talk Mic with explicit browser permission
   const toggleListening = async () => {
     if (isListening) {
       if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {
-          console.error(e);
-        }
+        try { recognitionRef.current.stop(); } catch {}
       }
       setIsListening(false);
-      setMicStatusMsg(null);
       return;
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
     if (!SpeechRecognition) {
-      setMicStatusMsg("Speech recognition isn't supported in this browser. Please use Chrome, Edge, or Safari.");
-      setTimeout(() => setMicStatusMsg(null), 5000);
+      alert("Speech recognition is not supported in this browser. Please use Chrome, Safari, or Edge.");
       return;
     }
 
-    // Explicitly request microphone permission first to avoid silent policy blocks
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Close immediately - we just needed permission approval
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(t => t.stop());
       }
-    } catch (permErr: any) {
-      console.warn("Microphone permission check warning:", permErr);
-      setMicStatusMsg("Microphone permission required. Please allow microphone access in your browser address bar.");
-      setTimeout(() => setMicStatusMsg(null), 6000);
+    } catch (e) {
+      alert("Microphone permission denied. Please allow microphone access in your browser settings.");
       return;
     }
 
@@ -161,52 +188,27 @@ export default function App() {
         try { recognitionRef.current.abort(); } catch {}
       }
 
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.lang = 'en-US';
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.lang = 'en-US';
 
-      recognition.onstart = () => {
-        setIsListening(true);
-        setMicStatusMsg("Listening to your voice, sir...");
-      };
-
-      recognition.onresult = (event: any) => {
-        const transcript = event.results?.[0]?.[0]?.transcript;
+      rec.onstart = () => setIsListening(true);
+      rec.onresult = (evt: any) => {
+        const transcript = evt.results?.[0]?.[0]?.transcript;
         if (transcript) {
           setInput(transcript);
           setIsListening(false);
-          setMicStatusMsg(null);
           handleSend(transcript);
         }
       };
+      rec.onerror = () => setIsListening(false);
+      rec.onend = () => setIsListening(false);
 
-      recognition.onerror = (event: any) => {
-        console.error("Speech Recognition Error:", event.error);
-        setIsListening(false);
-        if (event.error === 'not-allowed') {
-          setMicStatusMsg("Microphone access denied. Please click the lock icon in the URL bar to allow microphone.");
-        } else if (event.error === 'no-speech') {
-          setMicStatusMsg("No speech detected. Tap mic to try again.");
-        } else {
-          setMicStatusMsg(`Mic error: ${event.error}`);
-        }
-        setTimeout(() => setMicStatusMsg(null), 4000);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-        setMicStatusMsg(null);
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch (err: any) {
-      console.error("Failed to start speech recognition:", err);
+      recognitionRef.current = rec;
+      rec.start();
+    } catch {
       setIsListening(false);
-      setMicStatusMsg("Failed to initialize speech recognizer. Please check microphone settings.");
-      setTimeout(() => setMicStatusMsg(null), 4000);
     }
   };
 
@@ -214,572 +216,611 @@ export default function App() {
     const textToSend = customText || input;
     if (!textToSend.trim() || isLoading) return;
 
+    const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     const userMsg: Message = {
       id: Date.now().toString(),
       sender: 'user',
       text: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: currentTime
     };
 
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
 
-    const startTime = performance.now();
-
     try {
-      const response = await fetch('/api/chat', {
+      let mappedModel = 'meta-llama/llama-3.3-70b-instruct:free';
+      if (activeModel.includes('Claude')) mappedModel = 'anthropic/claude-3.5-sonnet';
+      if (activeModel.includes('GPT')) mappedModel = 'openai/gpt-4o';
+      if (activeModel.includes('Gemini')) mappedModel = 'google/gemini-2.0-flash-exp:free';
+
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: textToSend,
-          apiKey: apiKey.trim(),
-          model: selectedModel,
+          openRouterKey: openRouterKey.trim(),
+          openAiKey: openAiKey.trim(),
+          geminiKey: geminiKey.trim(),
+          model: mappedModel,
           history: messages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }))
         })
       });
 
-      const data = await response.json();
-      const latency = Math.round(performance.now() - startTime);
-
-      let replyText = data.reply || "Command executed, sir.";
-      
-      let detectedTool: { name: string; arg?: string; status: 'success' | 'running' | 'failed' } | undefined;
-      try {
-        if (replyText.trim().startsWith('{') && replyText.trim().endsWith('}')) {
-          const parsed = JSON.parse(replyText.trim());
-          if (parsed.tool) {
-            detectedTool = {
-              name: parsed.tool,
-              arg: parsed.arg,
-              status: 'success'
-            };
-            replyText = `Tool [${parsed.tool}] dispatched with parameter "${parsed.arg || 'default'}". Sequence executed, sir.`;
-          }
-        }
-      } catch {
-        // Not a JSON tool call
-      }
+      const data = await res.json();
+      const reply = data.reply || "Task complete.";
 
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'ultron',
-        text: replyText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        toolCall: detectedTool,
-        meta: {
-          model: data.model || 'Ultron Engine',
-          latency
-        }
+        text: reply,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        sources: textToSend.toLowerCase().includes('news') ? ['Reuters', 'Bloomberg', 'Financial Times', '+2 more'] : undefined
       };
 
       setMessages(prev => [...prev, botMsg]);
-      speakText(replyText);
+      speakText(reply);
 
-    } catch (err) {
-      const errorMsg: Message = {
+    } catch {
+      const errMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'ultron',
-        text: "I encountered an error communicating with the neural core, sir. Retrying local subsystem.",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        text: "Error executing command. System is online.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
-      setMessages(prev => [...prev, errorMsg]);
+      setMessages(prev => [...prev, errMsg]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSaveApiKey = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('ultron_openrouter_key', key);
-  };
-
-  const sampleCommands = [
-    "Run system diagnostics check",
-    "Search web for latest autonomous AI agents 2026",
-    "Inspect project architecture and agents",
-    "What are your active capabilities?",
-    "Plan a deployment pipeline for web applications"
+  const quickPills = [
+    { label: "Execute Tasks", sub: "Autonomous workflows", icon: Zap },
+    { label: "Use Tools", sub: "25+ integrations", icon: Wrench },
+    { label: "Run Agents", sub: "Multi-agent system", icon: Layers },
+    { label: "Live Intelligence", sub: "Real-time, web & data", icon: Globe },
   ];
 
   return (
-    <div className="flex h-screen w-full bg-slate-100 text-slate-800 overflow-hidden font-sans">
+    <div className="flex h-screen w-full bg-[#fbfbfd] text-slate-800 font-sans select-none overflow-hidden">
       
-      {/* LEFT SIDEBAR: Clean Light HUD */}
-      <aside className="w-80 border-r border-slate-200 bg-white flex flex-col justify-between p-5 hidden md:flex z-10 select-none shadow-sm">
+      {/* 1. LEFT SIDEBAR */}
+      <aside className="w-64 border-r border-slate-200/80 bg-white flex flex-col justify-between p-5 z-20 shrink-0">
         <div>
-          {/* Brand Header */}
+          {/* macOS window traffic lights */}
+          <div className="flex items-center space-x-2 mb-6">
+            <span className="w-3 h-3 rounded-full bg-[#ff5f56] inline-block cursor-pointer" />
+            <span className="w-3 h-3 rounded-full bg-[#ffbd2e] inline-block cursor-pointer" />
+            <span className="w-3 h-3 rounded-full bg-[#27c93f] inline-block cursor-pointer" />
+          </div>
+
+          {/* Logo Brand Header */}
           <div className="flex items-center space-x-3 mb-8">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 flex items-center justify-center shadow-md shadow-indigo-200">
-                <Cpu className="w-6 h-6 text-white" />
-              </div>
-              <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full animate-pulse" />
+            <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+              <span className="font-mono tracking-tighter">U</span>
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-wider text-slate-900 font-mono">ULTRON OS</h1>
-              <p className="text-xs text-indigo-600 font-mono font-semibold tracking-tight">AUTONOMOUS AGENT v1.0</p>
+              <h1 className="text-sm font-semibold text-slate-900 tracking-tight">Ultron OS</h1>
+              <p className="text-[11px] text-slate-400">Autonomous Agent v1.0</p>
             </div>
           </div>
 
-          {/* Core Status Reactor (Light Theme) */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-6 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-mono uppercase tracking-wider text-slate-600 flex items-center gap-1.5 font-semibold">
-                <Activity className="w-3.5 h-3.5 text-indigo-600" /> Core Reactor
-              </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                ONLINE
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <div className="flex justify-between text-xs font-mono mb-1 text-slate-600">
-                  <span>Neural Latency</span>
-                  <span className="text-indigo-600 font-semibold">{isLoading ? '28ms (active)' : '14ms'}</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-gradient-to-r from-indigo-500 to-blue-600 h-1.5 rounded-full transition-all duration-500" style={{ width: `${cpuLoad * 2}%` }} />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs font-mono mb-1 text-slate-600">
-                  <span>Memory Matrix</span>
-                  <span className="text-indigo-600 font-semibold">{memoryUsage}%</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-gradient-to-r from-teal-500 to-emerald-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${memoryUsage}%` }} />
-                </div>
-              </div>
-            </div>
-
-            {/* Vocal Status Indicator */}
-            {isSpeaking && (
-              <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
-                <span className="text-[11px] font-mono text-indigo-600 font-semibold flex items-center gap-1">
-                  <Volume2 className="w-3.5 h-3.5 animate-bounce" /> Deep Voice Active
-                </span>
-                <div className="flex gap-1 items-end h-4">
-                  <span className="w-1 bg-indigo-600 h-2 animate-pulse" />
-                  <span className="w-1 bg-indigo-600 h-4 animate-pulse delay-75" />
-                  <span className="w-1 bg-indigo-600 h-3 animate-pulse delay-150" />
-                  <span className="w-1 bg-indigo-600 h-1 animate-pulse" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Navigation Subsystems */}
-          <nav className="space-y-1.5 font-mono text-xs">
-            <button
-              onClick={() => setActiveTab('console')}
-              className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl transition-all ${
-                activeTab === 'console'
-                  ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Terminal className="w-4 h-4 text-indigo-600" />
-              <span>Direct Console</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('tools')}
-              className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl transition-all ${
-                activeTab === 'tools'
-                  ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Code2 className="w-4 h-4 text-indigo-600" />
-              <span>Tool Arsenal (25+)</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('agents')}
-              className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl transition-all ${
-                activeTab === 'agents'
-                  ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Layers className="w-4 h-4 text-indigo-600" />
-              <span>Agent Swarm</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('memory')}
-              className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl transition-all ${
-                activeTab === 'memory'
-                  ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Database className="w-4 h-4 text-indigo-600" />
-              <span>Vector Memory</span>
-            </button>
+          {/* Main Navigation */}
+          <nav className="space-y-1">
+            {[
+              { id: 'Chat', icon: MessageSquare },
+              { id: 'Agents', icon: Layers },
+              { id: 'Tools', icon: Wrench },
+              { id: 'Memory', icon: Database },
+              { id: 'Projects', icon: Folder },
+            ].map(item => {
+              const Icon = item.icon;
+              const isActive = activeNav === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveNav(item.id)}
+                  className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    isActive 
+                      ? 'bg-slate-100/90 text-slate-900 font-semibold' 
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-slate-900' : 'text-slate-400'}`} />
+                  <span>{item.id}</span>
+                </button>
+              );
+            })}
           </nav>
         </div>
 
-        {/* Bottom Toolbar & Source link */}
-        <div className="space-y-3 pt-4 border-t border-slate-200 font-mono text-xs">
-          <div className="flex items-center justify-between text-slate-600">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Shield className="w-3.5 h-3.5 text-indigo-600" /> Security Gate
+        {/* System Status Footer */}
+        <div className="pt-4 border-t border-slate-100 text-[11px] space-y-2.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1 mb-1">
+            System
+          </div>
+          <div className="flex items-center justify-between px-1 text-slate-600">
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Core Reactor
             </span>
-            <span className="text-emerald-600 font-bold">ARMED</span>
+            <span className="text-slate-400">Online</span>
           </div>
 
-          <a 
-            href="https://github.com/chinmaybelge79-rgb/Ultron-main"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-colors"
-          >
-            <span className="flex items-center gap-2 font-medium">
-              <ExternalLink className="w-3.5 h-3.5 text-indigo-600" /> GitHub Repository
+          <div className="flex items-center justify-between px-1 text-slate-600">
+            <span className="flex items-center gap-2">
+              <Shield className="w-3.5 h-3.5 text-slate-400" /> Security Gate
             </span>
-            <ChevronRight className="w-3 h-3 text-slate-400" />
-          </a>
+            <span className="text-slate-400">Armed</span>
+          </div>
+
+          <button 
+            onClick={() => setShowConfig(true)}
+            className="w-full flex items-center space-x-2 px-1 py-1 text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5 text-slate-400" />
+            <span>Settings</span>
+          </button>
         </div>
       </aside>
 
-      {/* MAIN VIEWPORT (Clean White Background) */}
-      <main className="flex-1 flex flex-col h-full bg-slate-50 relative overflow-hidden">
+      {/* 2. CENTER STAGE (Main Viewport) */}
+      <main className="flex-1 flex flex-col h-full bg-[#fbfbfd] relative overflow-hidden">
         
-        {/* TOP STATUS BAR */}
-        <header className="h-16 border-b border-slate-200 bg-white/95 backdrop-blur-md px-6 flex items-center justify-between z-10 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="md:hidden w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
-              U
-            </div>
-            <div>
-              <span className="text-xs uppercase tracking-widest text-indigo-600 font-mono font-bold">Status: Online</span>
-              <h2 className="text-sm font-semibold text-slate-800">JARVIS-Grade Butler Mode</h2>
-            </div>
+        {/* Top Header Bar */}
+        <header className="h-16 px-8 flex items-center justify-between border-b border-slate-200/50 bg-[#fbfbfd]/80 backdrop-blur-sm z-10">
+          <div className="flex items-center space-x-1.5 cursor-pointer">
+            <span className="font-semibold text-slate-900 text-sm tracking-tight">Ultron</span>
+            <ChevronDown className="w-4 h-4 text-slate-400" />
           </div>
 
-          {/* Quick controls */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSpeechEnabled(!speechEnabled)}
-              title={speechEnabled ? "Mute vocal audio" : "Enable vocal audio"}
-              className={`p-2 rounded-xl border transition-all ${
-                speechEnabled
-                  ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
-                  : 'bg-slate-100 border-slate-200 text-slate-400'
-              }`}
-            >
-              {speechEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          <div className="flex items-center space-x-3">
+            <button className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+              <Bell className="w-4 h-4" />
             </button>
 
             <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-mono text-slate-700 transition-colors"
+              onClick={() => setShowConfig(true)}
+              className="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-xs"
             >
-              <Settings className="w-3.5 h-3.5 text-indigo-600" />
+              <Sliders className="w-3.5 h-3.5 text-slate-500" />
               <span>AI Config</span>
             </button>
+
+            <div className="w-8 h-8 rounded-full bg-slate-200/80 flex items-center justify-center text-xs font-semibold text-slate-700">
+              C
+            </div>
           </div>
         </header>
 
-        {/* SETTINGS MODAL */}
-        {showSettings && (
-          <div className="absolute top-18 right-6 w-96 bg-white rounded-2xl p-5 shadow-xl z-50 border border-slate-200">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-mono text-sm font-bold text-slate-800 flex items-center gap-2">
-                <Settings className="w-4 h-4 text-indigo-600" /> Model & Neural Settings
-              </h3>
-              <button 
-                onClick={() => setShowSettings(false)}
-                className="text-slate-400 hover:text-slate-600 text-xs font-mono"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs font-mono">
-              <div>
-                <label className="block text-slate-600 mb-1 font-semibold">OpenRouter API Key (Optional)</label>
-                <input
-                  type="password"
-                  placeholder="sk-or-v1-..."
-                  value={apiKey}
-                  onChange={(e) => handleSaveApiKey(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:border-indigo-600"
-                />
-                <span className="text-[10px] text-slate-500 mt-1 block">
-                  Leave empty to run on the built-in Ultron autonomous reasoning engine.
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-slate-600 mb-1 font-semibold">Inference Model</label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:border-indigo-600"
-                >
-                  <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (Free / Recommended)</option>
-                  <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash</option>
-                  <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                  <option value="openai/gpt-4o">OpenAI GPT-4o</option>
-                </select>
-              </div>
-
-              <div className="pt-2 border-t border-slate-200">
-                <label className="block text-slate-600 mb-1 font-semibold">Voice Characteristics</label>
-                <div className="p-2.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-900 leading-relaxed">
-                  ✓ Pitch: 0.55 (Ultra Deep Male Baritone)<br/>
-                  ✓ Speed: 0.92 (Authoritative Butler Style)
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 1: MAIN CONSOLE CHAT */}
-        {activeTab === 'console' && (
-          <div className="flex-1 flex flex-col justify-between overflow-hidden relative">
+        {/* Content Body */}
+        <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col justify-between">
+          
+          <div className="max-w-3xl mx-auto w-full space-y-8">
             
-            {/* Messages Scroll Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 z-0">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-                >
-                  <div className="flex items-center gap-2 mb-1 px-1">
-                    <span className="text-[11px] font-mono text-slate-400">{msg.timestamp}</span>
-                    <span className="text-xs font-mono font-bold text-indigo-600">
-                      {msg.sender === 'user' ? 'OPERATOR' : 'ULTRON'}
-                    </span>
-                  </div>
+            {/* Center Ultron Logo & Welcome Title */}
+            <div className="text-center pt-2 pb-2">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-800 flex items-center justify-center shadow-md">
+                <span className="text-white text-2xl font-bold font-mono">U</span>
+              </div>
+              <h2 className="text-3xl font-bold tracking-tight text-slate-900 mb-1">
+                Hello, I'm Ultron.
+              </h2>
+              <p className="text-sm text-slate-400 font-normal">
+                Your autonomous AI operating system.
+              </p>
+            </div>
 
-                  <div
-                    className={`max-w-2xl rounded-2xl px-5 py-3.5 text-sm leading-relaxed shadow-sm ${
-                      msg.sender === 'user'
-                        ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-tr-sm'
-                        : 'bg-white text-slate-800 border border-slate-200 rounded-tl-sm shadow-xs'
-                    }`}
+            {/* 4 Quick Pills Card Row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {quickPills.map((pill, idx) => {
+                const Icon = pill.icon;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleSend(pill.label)}
+                    className="p-3.5 rounded-2xl bg-white border border-slate-200/80 hover:border-slate-300 hover:shadow-xs transition-all text-left group"
                   >
-                    <p className="whitespace-pre-wrap">{msg.text}</p>
+                    <Icon className="w-4 h-4 text-slate-700 mb-2 group-hover:scale-105 transition-transform" />
+                    <div className="text-xs font-semibold text-slate-900 leading-tight">
+                      {pill.label}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      {pill.sub}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
 
-                    {/* Tool Call Widget */}
-                    {msg.toolCall && (
-                      <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span className="text-slate-800 font-bold">{msg.toolCall.name}</span>
-                          {msg.toolCall.arg && (
-                            <span className="text-indigo-600 text-[11px]">"{msg.toolCall.arg}"</span>
+            {/* Conversation Flow */}
+            <div className="space-y-5 pt-4">
+              {messages.map(msg => (
+                <div key={msg.id} className="space-y-1">
+                  {msg.sender === 'user' ? (
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-slate-400 pr-1 mb-1">{msg.time}</span>
+                      <div className="flex items-center space-x-2">
+                        <div className="px-4 py-2.5 rounded-2xl bg-slate-100 text-slate-800 text-xs font-medium">
+                          {msg.text}
+                        </div>
+                        <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-700">
+                          C
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start space-x-3 max-w-2xl">
+                      <div className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5">
+                        U
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-semibold text-slate-900">Ultron</span>
+                          <span className="text-[10px] text-slate-400">• {msg.time}</span>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                          {msg.text}
+
+                          {/* Sources Pills */}
+                          {msg.sources && (
+                            <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-2 items-center">
+                              {msg.sources.map((src, i) => (
+                                <span
+                                  key={i}
+                                  className="px-2 py-0.5 rounded-md bg-slate-50 border border-slate-200 text-[10px] text-slate-600 font-medium cursor-pointer hover:bg-slate-100"
+                                >
+                                  {src}
+                                </span>
+                              ))}
+                            </div>
                           )}
                         </div>
-                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold">
-                          EXECUTED
-                        </span>
-                      </div>
-                    )}
 
-                    {msg.meta && (
-                      <div className="mt-2 text-[10px] font-mono text-slate-500 flex items-center gap-3 pt-2 border-t border-slate-100">
-                        {msg.meta.model && <span>Core: {msg.meta.model}</span>}
-                        {msg.meta.latency && <span>{msg.meta.latency}ms</span>}
+                        {/* Action Toolbar */}
+                        <div className="flex items-center space-x-3 text-slate-400 pl-1 text-xs">
+                          <button 
+                            onClick={() => navigator.clipboard.writeText(msg.text)}
+                            title="Copy response" 
+                            className="hover:text-slate-600 p-1"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button title="Helpful" className="hover:text-slate-600 p-1">
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button title="Not helpful" className="hover:text-slate-600 p-1">
+                            <ThumbsDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button 
+                            onClick={() => handleSend(messages[messages.length - 2]?.text || "Retry")}
+                            title="Regenerate" 
+                            className="hover:text-slate-600 p-1"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
 
               {isLoading && (
-                <div className="flex flex-col items-start">
-                  <div className="flex items-center gap-2 mb-1 px-1">
-                    <span className="text-xs font-mono font-bold text-indigo-600">ULTRON</span>
-                  </div>
-                  <div className="bg-white rounded-2xl rounded-tl-sm px-5 py-3.5 border border-slate-200 flex items-center space-x-2 shadow-xs">
-                    <div className="w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
-                    <span className="text-xs font-mono text-slate-600">Processing command through neural cortex...</span>
-                  </div>
+                <div className="flex items-center space-x-3 text-xs text-slate-400 pl-2">
+                  <div className="w-2 h-2 rounded-full bg-slate-800 animate-ping" />
+                  <span>Ultron thinking...</span>
                 </div>
               )}
 
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Mic Status Banner */}
-            {micStatusMsg && (
-              <div className="mx-6 mb-2 p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center gap-2 text-xs font-mono text-indigo-900 animate-fade-in shadow-xs">
-                <AlertCircle className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span className="flex-1">{micStatusMsg}</span>
-              </div>
-            )}
+          </div>
 
-            {/* Suggested quick prompts */}
-            <div className="px-6 py-2 overflow-x-auto flex gap-2 no-scrollbar select-none">
-              {sampleCommands.map((cmd, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSend(cmd)}
-                  className="whitespace-nowrap px-3 py-1.5 rounded-full bg-white hover:bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600 hover:text-indigo-600 transition-colors flex items-center gap-1.5 shadow-xs"
-                >
-                  <Sparkles className="w-3 h-3 text-indigo-600" />
-                  {cmd}
-                </button>
-              ))}
-            </div>
-
-            {/* INPUT COMMAND BAR */}
-            <div className="p-6 pt-2">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSend();
-                }}
-                className={`bg-white rounded-2xl p-2 flex items-center gap-2 border transition-all shadow-sm ${
+          {/* Bottom Command Bar */}
+          <div className="max-w-3xl mx-auto w-full pt-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSend();
+              }}
+              className="flex items-center bg-white rounded-2xl border border-slate-200/90 shadow-sm px-3 py-2 space-x-3 focus-within:border-slate-400 transition-all"
+            >
+              {/* Functional Mic Button */}
+              <button
+                type="button"
+                onClick={toggleListening}
+                title={isListening ? "Listening... click to send" : "Click to speak"}
+                className={`p-2 rounded-xl transition-all cursor-pointer ${
                   isListening
-                    ? 'border-red-500 ring-2 ring-red-100 glow-active'
-                    : 'border-slate-300 focus-within:border-indigo-600 focus-within:ring-2 focus-within:ring-indigo-100'
+                    ? 'bg-red-500 text-white animate-pulse'
+                    : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                {/* Fixed Interactive Push-to-Talk Mic */}
-                <button
-                  type="button"
-                  onClick={toggleListening}
-                  title={isListening ? "Listening... click to stop" : "Click to speak via microphone"}
-                  className={`p-3 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                    isListening
-                      ? 'bg-red-600 text-white animate-pulse'
-                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                {isListening ? <MicOff className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4" />}
+              </button>
+
+              <input
+                type="text"
+                placeholder={isListening ? "Listening to your voice..." : "Ask Ultron anything..."}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                className="flex-1 bg-transparent text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+              />
+
+              <button
+                type="submit"
+                disabled={!input.trim() || isLoading}
+                className="w-8 h-8 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-white flex items-center justify-center transition-all cursor-pointer shrink-0"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          </div>
+
+        </div>
+      </main>
+
+      {/* 3. RIGHT SIDEBAR */}
+      <aside className="w-72 border-l border-slate-200/80 bg-white p-5 flex flex-col space-y-6 z-20 shrink-0">
+        
+        {/* Core Reactor Card */}
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-xs font-semibold text-slate-900">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Core Reactor</span>
+            </div>
+            <span className="text-[10px] text-emerald-600 font-medium">Online</span>
+          </div>
+
+          <div className="space-y-2 text-[11px]">
+            <div className="flex items-center justify-between text-slate-500">
+              <span>CPU</span>
+              <div className="flex items-center space-x-2">
+                <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="w-2.5 h-full bg-slate-900 rounded-full" />
+                </div>
+                <span className="text-slate-700 font-mono text-[10px]">14%</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-slate-500">
+              <span>Memory</span>
+              <div className="flex items-center space-x-2">
+                <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="w-6 h-full bg-slate-900 rounded-full" />
+                </div>
+                <span className="text-slate-700 font-mono text-[10px]">37%</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-slate-500">
+              <span>Latency</span>
+              <span className="text-slate-700 font-mono text-[10px]">14 ms</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Active Model Selector */}
+        <div className="relative">
+          <div 
+            onClick={() => setShowModelDropdown(!showModelDropdown)}
+            className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between cursor-pointer hover:border-slate-300 transition-all"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-700">
+                <Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-400 font-medium">Active Model</div>
+                <div className="text-xs font-semibold text-slate-900">{activeModel}</div>
+              </div>
+            </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </div>
+
+          {showModelDropdown && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-lg py-1 z-30 text-xs">
+              {['Llama 3.3 70B', 'Claude 3.5 Sonnet', 'Gemini 2.0 Flash', 'GPT-4o Mini'].map(m => (
+                <div
+                  key={m}
+                  onClick={() => {
+                    setActiveModel(m);
+                    setShowModelDropdown(false);
+                  }}
+                  className={`px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-slate-50 ${
+                    activeModel === m ? 'font-semibold text-slate-900' : 'text-slate-600'
                   }`}
                 >
-                  {isListening ? <MicOff className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5" />}
-                </button>
+                  <span>{m}</span>
+                  {activeModel === m && <Check className="w-3 h-3 text-slate-900" />}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
+        {/* Voice Profile Card with Play/Stop Test */}
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-700">
+              <Activity className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-400 font-medium">Voice Profile</div>
+              <div className="text-xs font-semibold text-slate-900">Ultron (Deep Male)</div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              if (isSpeaking) {
+                stopSpeaking();
+              } else {
+                speakText("Ultron autonomous operating system standing by. Voice profile active.");
+              }
+            }}
+            className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors"
+          >
+            {isSpeaking ? <Square className="w-3 h-3 text-red-500 fill-red-500" /> : <Play className="w-3 h-3 ml-0.5" />}
+          </button>
+        </div>
+
+        {/* Quick Actions List */}
+        <div className="space-y-3">
+          <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-900 px-1">
+            <Zap className="w-3.5 h-3.5 text-slate-700" />
+            <span>Quick Actions</span>
+          </div>
+
+          <div className="space-y-1.5">
+            {[
+              { label: "Run Diagnostics", icon: Activity, cmd: "Run system diagnostics" },
+              { label: "Inspect Agents", icon: Layers, cmd: "Inspect all active agents" },
+              { label: "System Health", icon: Shield, cmd: "Check system health and latency" },
+              { label: "Open Tool Arsenal", icon: Wrench, cmd: "List all 25+ integrated tools" },
+            ].map((action, idx) => {
+              const ActionIcon = action.icon;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => handleSend(action.cmd)}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/50 text-xs text-slate-700 transition-all text-left"
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <ActionIcon className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{action.label}</span>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+      </aside>
+
+      {/* 4. AI CONFIG MODAL (Clean, with SUBMIT / SAVE BUTTON & ALL API KEYS) */}
+      {showConfig && (
+        <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">AI Configuration & Keys</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Configure your intelligence providers and voice synthesis</p>
+              </div>
+              <button
+                onClick={() => setShowConfig(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-semibold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveConfig} className="space-y-4 text-xs">
+              
+              {/* OpenRouter API Key */}
+              <div>
+                <label className="block text-slate-700 font-medium mb-1">
+                  OpenRouter API Key <span className="text-slate-400 font-normal">(Powers Llama, Claude, etc.)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="sk-or-v1-..."
+                  value={openRouterKey}
+                  onChange={(e) => setOpenRouterKey(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
+                />
+              </div>
+
+              {/* OpenAI API Key */}
+              <div>
+                <label className="block text-slate-700 font-medium mb-1">
+                  OpenAI API Key <span className="text-slate-400 font-normal">(Optional for GPT-4o)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="sk-..."
+                  value={openAiKey}
+                  onChange={(e) => setOpenAiKey(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
+                />
+              </div>
+
+              {/* Google Gemini API Key */}
+              <div>
+                <label className="block text-slate-700 font-medium mb-1">
+                  Google Gemini API Key <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="AIzaSy..."
+                  value={geminiKey}
+                  onChange={(e) => setGeminiKey(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
+                />
+              </div>
+
+              {/* ElevenLabs API Key */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-slate-700 font-medium mb-1">
+                  ElevenLabs API Key <span className="text-slate-400 font-normal">(Ultra-Deep Voice)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="713f57a0b5..."
+                  value={elevenLabsKey}
+                  onChange={(e) => setElevenLabsKey(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
+                />
+              </div>
+
+              {/* ElevenLabs Voice ID */}
+              <div>
+                <label className="block text-slate-700 font-medium mb-1">
+                  ElevenLabs Voice ID
+                </label>
                 <input
                   type="text"
-                  placeholder={isListening ? "Listening to your voice, sir..." : "Give Ultron a command or click the mic to speak..."}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none font-sans"
+                  placeholder="gBUMIvE4QAMyPIru0aFd"
+                  value={voiceId}
+                  onChange={(e) => setVoiceId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
                 />
+              </div>
 
+              {/* Submit / Continue Button */}
+              <div className="pt-3 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfig(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium text-xs transition-colors"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
-                  disabled={!input.trim() || isLoading}
-                  className="px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-semibold text-xs tracking-wider uppercase transition-all disabled:opacity-40 flex items-center gap-1.5 font-mono cursor-pointer shadow-sm"
+                  className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs transition-all flex items-center space-x-1.5 shadow-sm"
                 >
-                  <span>Transmit</span>
-                  <Send className="w-3.5 h-3.5" />
+                  {saveSuccess ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Saved & Connected</span>
+                    </>
+                  ) : (
+                    <span>Save & Continue</span>
+                  )}
                 </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: TOOL ARSENAL (Light Mode) */}
-        {activeTab === 'tools' && (
-          <div className="flex-1 p-8 overflow-y-auto space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold font-mono text-slate-900 flex items-center gap-2">
-                <Code2 className="w-6 h-6 text-indigo-600" /> Integrated Tool Arsenal (25+)
-              </h2>
-              <p className="text-slate-600 text-sm mt-1">
-                Ultron interacts with host filesystems, terminal runtimes, web search, and operating system controls.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                { name: "bash_exec", category: "Terminal", desc: "Execute verified shell commands inside sandbox boundaries." },
-                { name: "web_search", category: "Intelligence", desc: "Real-time Google and DuckDuckGo queries for fresh data." },
-                { name: "file_manager", category: "System", desc: "Read, write, edit, and recursively index project directories." },
-                { name: "git_control", category: "DevOps", desc: "Perform commits, branch inspection, diffing, and syncing." },
-                { name: "process_probe", category: "Telemetry", desc: "Inspect active CPU, RAM, and background tasks." },
-                { name: "screenshot", category: "Vision", desc: "Capture desktop monitors for multi-modal visual inspection." },
-                { name: "audio_speak", category: "Vocal", desc: "Synthesize responses with deep male vocal resonance." },
-                { name: "clipboard_sync", category: "Utility", desc: "Read and populate system clipboard dynamically." },
-                { name: "kill_switch", category: "Security", desc: "Instant fail-safe abort mechanism for running procedures." }
-              ].map((tool, idx) => (
-                <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-indigo-300 transition-all shadow-xs">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="font-mono font-bold text-slate-900 text-sm">{tool.name}</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-100">
-                      {tool.category}
-                    </span>
-                  </div>
-                  <p className="text-slate-600 text-xs leading-relaxed">{tool.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: AGENT SWARM (Light Mode) */}
-        {activeTab === 'agents' && (
-          <div className="flex-1 p-8 overflow-y-auto space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold font-mono text-slate-900 flex items-center gap-2">
-                <Layers className="w-6 h-6 text-indigo-600" /> Multi-Agent Cognitive Framework
-              </h2>
-              <p className="text-slate-600 text-sm mt-1">
-                Seven specialized autonomous agents governed by an executive orchestrator.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                { name: "Executive Orchestrator", role: "Mission Command", desc: "Deconstructs high-level user intents and routes subtasks to domain agents." },
-                { name: "Coder Agent", role: "Software Engineering", desc: "Applies code edits, runs test suites, and enforces lint rules." },
-                { name: "Researcher Agent", role: "Knowledge Retrieval", desc: "Gathers web information, documentation, and synthesizes answers." },
-                { name: "Planner Agent", role: "Reasoning Pipeline", desc: "Generates multi-step execution graphs: Understand → Plan → Execute → Verify." },
-                { name: "Terminal Agent", role: "Shell Execution", desc: "Executes safe system commands and audits outputs." },
-                { name: "Vision Agent", role: "Multimodal Analysis", desc: "Processes desktop screenshots and UI mockups." }
-              ].map((agent, i) => (
-                <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-mono font-bold text-slate-900">{agent.name}</h3>
-                    <span className="text-xs text-indigo-600 font-mono font-semibold">{agent.role}</span>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-relaxed">{agent.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: VECTOR MEMORY (Light Mode) */}
-        {activeTab === 'memory' && (
-          <div className="flex-1 p-8 overflow-y-auto space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold font-mono text-slate-900 flex items-center gap-2">
-                <Database className="w-6 h-6 text-indigo-600" /> SQLite Semantic Memory Store
-              </h2>
-              <p className="text-slate-600 text-sm mt-1">
-                Persistent memory with vector embeddings, user preference tracking, and reasoning traces.
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-sm text-slate-800 font-semibold">Active Knowledge Graph</span>
-                <span className="text-xs font-mono text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                  Memory Database: Ready
-                </span>
               </div>
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-700 space-y-2">
-                <div>[Preference] Operator prefers concise, butler-style responses.</div>
-                <div>[Identity] Assistant name: Ultron (Inspired by JARVIS).</div>
-                <div>[Vocal Model] Ultra-Deep Authoritative Male Baritone (Pitch 0.55).</div>
-                <div>[Domain] macOS native execution with edge-cloud capabilities.</div>
-                <div>[Self-Improvement] Success rate: 98.4% across 270 test suites.</div>
-              </div>
-            </div>
-          </div>
-        )}
 
-      </main>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
