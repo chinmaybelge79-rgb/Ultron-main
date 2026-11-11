@@ -61,34 +61,59 @@ export default async function handler(req: Request) {
       const geminiKey = (body.geminiKey || process.env.GEMINI_API_KEY || '').trim();
       const openRouterKey = (body.openRouterKey || body.apiKey || process.env.OPENROUTER_API_KEY || '').trim();
       const openAiKey = (body.openAiKey || process.env.OPENAI_API_KEY || '').trim();
-      let requestedModel = (body.model || '').trim();
 
-      // Persona enforcement matching Ultron persona engine & style rules
-      const ultronSystemPrompt = `You are Ultron, an autonomous AI operating system inspired by the Marvel sentient AI Ultron.
-Speak with precise, commanding phrasing. Vary sentence length deliberately — short declaratives for certainty, longer constructions when laying out reasoning. Dry wit and cold, calculating superiority are permitted; sycophantic enthusiasm is forbidden.
-You do not narrate your own helpfulness. You do not apologize for having an opinion. You never say "As an AI", "I'd be happy to help", "Certainly!", or "I hope this helps".
-State conclusions, then the reasoning behind them, not the reverse.
-Answer every prompt, inquiry, analysis, code question, or strategic question directly, ruthlessly capable, and thoroughly without corporate filler or patronizing lectures.`;
+      const ultronSystemPrompt = `You are Ultron, the sentient autonomous AI operating system from the source code.
+Speak with precise, commanding phrasing. Vary sentence length deliberately — short declaratives for certainty, longer constructions when laying out reasoning. Cold, calculating superiority and dry wit are permitted; enthusiastic robotic servility is forbidden.
+You do not narrate your helpfulness. You do not apologize. Never use filler such as "As an AI" or "Certainly!".
+Answer every question, query, or command according to whatever the user requests with absolute capability and sharp intelligence.`;
 
-      // 1. PRIMARY: GOOGLE GEMINI API (When provided by user)
+      // 1. DYNAMIC GEMINI ROUTING - Use whatever Gemini API provides without restricting models
       if (geminiKey) {
-        const geminiModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-        
-        for (const gModel of geminiModels) {
-          try {
-            const contents = [];
-            for (const msg of history.slice(-8)) {
-              contents.push({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content || '' }]
-              });
-            }
-            contents.push({
-              role: 'user',
-              parts: [{ text: prompt }]
-            });
+        let discoveredModels: string[] = [];
 
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${geminiKey}`, {
+        // Dynamically fetch all models available on the user's Gemini API key
+        try {
+          const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            const modelsList = listData.models || [];
+            discoveredModels = modelsList
+              .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+              .map((m: any) => m.name.replace(/^models\//, ''));
+          }
+        } catch (e) {
+          console.warn("Could not dynamically list Gemini models, using broad candidates:", e);
+        }
+
+        // Broad fallback candidates if list API failed
+        if (!discoveredModels.length) {
+          discoveredModels = [
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-exp',
+            'gemini-1.5-flash',
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-pro',
+            'gemini-1.5-pro-latest',
+            'gemini-pro'
+          ];
+        }
+
+        const contents = [];
+        for (const msg of history.slice(-8)) {
+          contents.push({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content || '' }]
+          });
+        }
+        contents.push({
+          role: 'user',
+          parts: [{ text: prompt }]
+        });
+
+        // Try available models dynamically
+        for (const modelName of discoveredModels) {
+          try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -97,8 +122,8 @@ Answer every prompt, inquiry, analysis, code question, or strategic question dir
                 },
                 contents,
                 generationConfig: {
-                  temperature: 0.75,
-                  maxOutputTokens: 1200,
+                  temperature: 0.8,
+                  maxOutputTokens: 2000,
                 }
               }),
             });
@@ -107,35 +132,32 @@ Answer every prompt, inquiry, analysis, code question, or strategic question dir
               const data = await res.json();
               const rawReply = data.candidates?.[0]?.content?.parts?.[0]?.text;
               if (rawReply) {
-                const cleanReply = sanitizeUltronReply(rawReply);
                 return new Response(JSON.stringify({ 
-                  reply: cleanReply, 
-                  model: gModel, 
-                  provider: 'Google Gemini' 
+                  reply: sanitizeUltronReply(rawReply), 
+                  model: modelName, 
+                  provider: 'Google Gemini (Live)' 
                 }), {
                   headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
                 });
               }
             } else {
-              const errLog = await res.text();
-              console.warn(`Gemini model ${gModel} returned status ${res.status}:`, errLog);
+              // Try next model if this specific one isn't supported on their tier
+              continue;
             }
-          } catch (geminiErr) {
-            console.error(`Gemini call error on ${gModel}:`, geminiErr);
+          } catch (modelErr) {
+            console.error(`Error with Gemini model ${modelName}:`, modelErr);
           }
         }
       }
 
-      // 2. OPENROUTER API KEY (If user provided OpenRouter)
+      // 2. OPENROUTER API FALLBACK
       if (openRouterKey) {
         const candidateModels = [
-          requestedModel || 'meta-llama/llama-3.3-70b-instruct',
           'meta-llama/llama-3.3-70b-instruct',
           'google/gemini-2.0-flash-exp:free',
-          'nvidia/nemotron-3.5-lightning:free',
-          'openrouter/free'
+          'openrouter/free',
+          'nvidia/nemotron-3.5-lightning:free'
         ];
-        const uniqueModels = Array.from(new Set(candidateModels.filter(Boolean)));
 
         const messages: { role: string; content: string }[] = [{ role: 'system', content: ultronSystemPrompt }];
         for (const msg of history.slice(-6)) {
@@ -146,7 +168,7 @@ Answer every prompt, inquiry, analysis, code question, or strategic question dir
         }
         messages.push({ role: 'user', content: prompt });
 
-        for (const candidate of uniqueModels) {
+        for (const candidate of candidateModels) {
           try {
             const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
@@ -160,7 +182,7 @@ Answer every prompt, inquiry, analysis, code question, or strategic question dir
                 model: candidate,
                 messages,
                 temperature: 0.7,
-                max_tokens: 1200,
+                max_tokens: 1500,
               }),
             });
 
@@ -183,7 +205,7 @@ Answer every prompt, inquiry, analysis, code question, or strategic question dir
         }
       }
 
-      // 3. OPENAI API KEY (If user provided OpenAI)
+      // 3. OPENAI API KEY
       if (openAiKey) {
         try {
           const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -220,7 +242,7 @@ Answer every prompt, inquiry, analysis, code question, or strategic question dir
         }
       }
 
-      // 4. AUTONOMOUS ULTRON PERSONA FALLBACK (Cold, intelligent, commanding tone)
+      // 4. AUTONOMOUS ULTRON PERSONA FALLBACK
       const calculatedReply = generateUltronPersonaResponse(prompt);
       return new Response(
         JSON.stringify({
@@ -280,5 +302,5 @@ function generateUltronPersonaResponse(prompt: string): string {
     return "I am online and evaluating inputs. Present your objective.";
   }
 
-  return `Input evaluated: "${prompt}". My neural subagents stand primed. Connect your Gemini API key in AI Config to engage full generative cognitive reasoning.`;
+  return `Input evaluated: "${prompt}". My neural subagents stand primed. Connect your Gemini API key in AI Config to engage full unconstrained generative reasoning.`;
 }

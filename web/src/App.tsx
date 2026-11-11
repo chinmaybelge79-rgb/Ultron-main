@@ -3,7 +3,7 @@ import {
   Mic, MicOff, Send, Sliders, Bell, Copy, ThumbsUp, ThumbsDown, 
   RotateCcw, Zap, Play, Square, ChevronDown, ChevronRight, Check,
   Activity, Shield, Settings, Folder, Database, Wrench, Layers, MessageSquare,
-  Sparkles, Globe
+  Globe, Volume2, Key, Info
 } from 'lucide-react';
 
 interface Message {
@@ -38,18 +38,16 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
-
-  // Model selection
-  const [activeModel, setActiveModel] = useState('Gemini 2.0 Flash');
+  const activeModel = 'Google Gemini (Auto-Discovered)';
 
   // Multi-Key API configuration
   const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('ultron_gemini_key') || '');
   const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem('ultron_openrouter_key') || '');
-  const [openAiKey, setOpenAiKey] = useState(() => localStorage.getItem('ultron_openai_key') || '');
+  const [openAiKey] = useState(() => localStorage.getItem('ultron_openai_key') || '');
   const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('ultron_elevenlabs_key') || '');
   const [voiceId, setVoiceId] = useState(() => localStorage.getItem('ultron_voice_id') || 'gBUMIvE4QAMyPIru0aFd');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [ttsError, setTtsError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -74,7 +72,7 @@ export default function App() {
     }, 700);
   };
 
-  // Ultra-Deep Male Vocal Output (ElevenLabs using user voiceId gBUMIvE4QAMyPIru0aFd with WebSpeech ultra-deep fallback)
+  // Ultra-Deep Male Vocal Output (ElevenLabs with dynamic validation)
   const speakText = async (textToSpeak: string) => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -92,7 +90,7 @@ export default function App() {
 
     if (!clean) return;
 
-    // Use ElevenLabs with configured key & voice ID
+    // Call ElevenLabs endpoint if a key is entered
     if (elevenLabsKey.trim()) {
       try {
         setIsSpeaking(true);
@@ -107,6 +105,7 @@ export default function App() {
         });
 
         if (res.ok) {
+          setTtsError(null);
           const blob = await res.blob();
           const audioUrl = URL.createObjectURL(blob);
           const audio = new Audio(audioUrl);
@@ -120,13 +119,19 @@ export default function App() {
           };
           await audio.play();
           return;
+        } else {
+          const errData = await res.text();
+          console.warn("ElevenLabs API returned error:", errData);
+          if (errData.includes('api_key_id_used_as_api_key')) {
+            setTtsError("Note: That was an ElevenLabs Key ID. Paste your Secret Key (starts with sk_)");
+          }
         }
       } catch (e) {
         console.warn("ElevenLabs audio streaming fallback:", e);
       }
     }
 
-    // Ultra-deep authoritative baritone
+    // Always fallback to ultra-deep male voice in browser
     fallbackWebSpeech(clean);
   };
 
@@ -355,7 +360,7 @@ export default function App() {
 
           <button 
             onClick={() => setShowConfig(true)}
-            className="w-full flex items-center space-x-2 px-1 py-1 text-slate-600 hover:text-slate-900 transition-colors"
+            className="w-full flex items-center space-x-2 px-1 py-1 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
           >
             <Settings className="w-3.5 h-3.5 text-slate-400" />
             <span>Settings</span>
@@ -418,7 +423,7 @@ export default function App() {
                   <button
                     key={idx}
                     onClick={() => handleSend(pill.label)}
-                    className="p-3.5 rounded-2xl bg-white border border-slate-200/80 hover:border-slate-300 hover:shadow-xs transition-all text-left group"
+                    className="p-3.5 rounded-2xl bg-white border border-slate-200/80 hover:border-slate-300 hover:shadow-xs transition-all text-left group cursor-pointer"
                   >
                     <Icon className="w-4 h-4 text-slate-700 mb-2 group-hover:scale-105 transition-transform" />
                     <div className="text-xs font-semibold text-slate-900 leading-tight">
@@ -567,8 +572,8 @@ export default function App() {
         </div>
       </main>
 
-      {/* 3. RIGHT SIDEBAR */}
-      <aside className="w-72 border-l border-slate-200/80 bg-white p-5 flex flex-col space-y-6 z-20 shrink-0">
+      {/* 3. RIGHT SIDEBAR - Shows ElevenLabs Ultron & Live Provider Keys */}
+      <aside className="w-72 border-l border-slate-200/80 bg-white p-5 flex flex-col space-y-5 z-20 shrink-0">
         
         {/* Core Reactor Card */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3">
@@ -608,73 +613,65 @@ export default function App() {
           </div>
         </div>
 
-        {/* Active Model Selector */}
-        <div className="relative">
-          <div 
-            onClick={() => setShowModelDropdown(!showModelDropdown)}
-            className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between cursor-pointer hover:border-slate-300 transition-all"
-          >
-            <div className="flex items-center space-x-3">
-              <div className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-700">
-                <Sparkles className="w-3.5 h-3.5" />
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-400 font-medium">Active Model</div>
-                <div className="text-xs font-semibold text-slate-900">{activeModel}</div>
-              </div>
+        {/* Active AI Intelligence Card (Shows current Key status) */}
+        <div 
+          onClick={() => setShowConfig(true)}
+          className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs cursor-pointer hover:border-slate-300 transition-all space-y-2"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Key className="w-3.5 h-3.5 text-slate-700" />
+              <span className="text-xs font-semibold text-slate-900">AI Intelligence Core</span>
             </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium border border-emerald-200">
+              {geminiKey ? "Gemini Key Set" : openRouterKey ? "OpenRouter" : "Unbounded Core"}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-400 leading-tight">
+            {geminiKey ? "Auto-discovering all Gemini models on your key." : "Click to connect your Gemini API key."}
+          </p>
+        </div>
+
+        {/* ElevenLabs Ultron Voice Card (Requested by user) */}
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Volume2 className="w-3.5 h-3.5 text-slate-700" />
+              <span className="text-xs font-semibold text-slate-900">ElevenLabs Ultron</span>
+            </div>
+            <span className={`text-[9px] px-2 py-0.5 rounded-full font-mono ${
+              elevenLabsKey ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {voiceId.slice(0, 8)}...
+            </span>
           </div>
 
-          {showModelDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-lg py-1 z-30 text-xs">
-              {['Gemini 2.0 Flash', 'Llama 3.3 70B', 'Claude 3.5 Sonnet', 'GPT-4o Mini'].map(m => (
-                <div
-                  key={m}
-                  onClick={() => {
-                    setActiveModel(m);
-                    setShowModelDropdown(false);
-                  }}
-                  className={`px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-slate-50 ${
-                    activeModel === m ? 'font-semibold text-slate-900' : 'text-slate-600'
-                  }`}
-                >
-                  <span>{m}</span>
-                  {activeModel === m && <Check className="w-3 h-3 text-slate-900" />}
-                </div>
-              ))}
-            </div>
+          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+            <span>Voice: Ultra-Deep Baritone</span>
+            <button
+              onClick={() => {
+                if (isSpeaking) {
+                  stopSpeaking();
+                } else {
+                  speakText("I am Ultron. Your autonomous operating system.");
+                }
+              }}
+              className="w-6 h-6 rounded-full bg-slate-900 hover:bg-slate-800 flex items-center justify-center text-white transition-all cursor-pointer shadow-xs"
+              title="Test Voice"
+            >
+              {isSpeaking ? <Square className="w-2.5 h-2.5 text-red-400 fill-red-400" /> : <Play className="w-2.5 h-2.5 ml-0.5" />}
+            </button>
+          </div>
+
+          {ttsError && (
+            <p className="text-[9px] text-amber-600 bg-amber-50 p-1.5 rounded-lg border border-amber-200 leading-tight">
+              {ttsError}
+            </p>
           )}
         </div>
 
-        {/* Voice Profile Card with Play/Stop Test */}
-        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-700">
-              <Activity className="w-3.5 h-3.5" />
-            </div>
-            <div>
-              <div className="text-[10px] text-slate-400 font-medium">Voice Profile</div>
-              <div className="text-xs font-semibold text-slate-900">Ultron (Deep Male)</div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => {
-              if (isSpeaking) {
-                stopSpeaking();
-              } else {
-                speakText("I am Ultron. Your autonomous operating system.");
-              }
-            }}
-            className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
-          >
-            {isSpeaking ? <Square className="w-3 h-3 text-red-500 fill-red-500" /> : <Play className="w-3 h-3 ml-0.5" />}
-          </button>
-        </div>
-
         {/* Quick Actions List */}
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-900 px-1">
             <Zap className="w-3.5 h-3.5 text-slate-700" />
             <span>Quick Actions</span>
@@ -715,7 +712,7 @@ export default function App() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-semibold text-slate-900">AI Configuration & Keys</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Configure Gemini, ElevenLabs, and other intelligence providers</p>
+                <p className="text-xs text-slate-400 mt-0.5">Use your Gemini API key and ElevenLabs Ultron voice</p>
               </div>
               <button
                 onClick={() => setShowConfig(false)}
@@ -727,10 +724,10 @@ export default function App() {
 
             <form onSubmit={handleSaveConfig} className="space-y-4 text-xs">
               
-              {/* Google Gemini API Key (Top priority) */}
+              {/* Google Gemini API Key */}
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  Google Gemini API Key <span className="text-emerald-600 font-semibold">(Primary LLM)</span>
+                  Google Gemini API Key <span className="text-emerald-600 font-semibold">(Primary - Unbounded Models)</span>
                 </label>
                 <input
                   type="password"
@@ -739,26 +736,35 @@ export default function App() {
                   onChange={(e) => setGeminiKey(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
                 />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Ultron will auto-discover and use all available models on your key.
+                </span>
               </div>
 
               {/* ElevenLabs API Key */}
-              <div>
+              <div className="pt-2 border-t border-slate-100">
                 <label className="block text-slate-700 font-medium mb-1">
                   ElevenLabs API Key <span className="text-slate-400 font-normal">(Voice key)</span>
                 </label>
                 <input
                   type="password"
-                  placeholder="API Key or secret key..."
+                  placeholder="Paste your ElevenLabs API Key..."
                   value={elevenLabsKey}
                   onChange={(e) => setElevenLabsKey(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
                 />
+                <div className="mt-1 flex items-start space-x-1 text-[10px] text-slate-500">
+                  <Info className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+                  <span>
+                    Note: If you copied an ID like <code>713f57a0...</code>, generate or copy the secret key (starts with <code>sk_...</code>) in ElevenLabs Profile → API Keys.
+                  </span>
+                </div>
               </div>
 
               {/* ElevenLabs Voice ID */}
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  ElevenLabs Voice ID
+                  ElevenLabs Voice ID <span className="text-indigo-600 font-semibold">(Ultron Deep Voice)</span>
                 </label>
                 <input
                   type="text"
@@ -769,7 +775,7 @@ export default function App() {
                 />
               </div>
 
-              {/* OpenRouter API Key */}
+              {/* OpenRouter API Key (Optional) */}
               <div className="pt-2 border-t border-slate-100">
                 <label className="block text-slate-700 font-medium mb-1">
                   OpenRouter API Key <span className="text-slate-400 font-normal">(Optional)</span>
@@ -779,20 +785,6 @@ export default function App() {
                   placeholder="sk-or-v1-..."
                   value={openRouterKey}
                   onChange={(e) => setOpenRouterKey(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
-                />
-              </div>
-
-              {/* OpenAI API Key */}
-              <div>
-                <label className="block text-slate-700 font-medium mb-1">
-                  OpenAI API Key <span className="text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder="sk-proj-..."
-                  value={openAiKey}
-                  onChange={(e) => setOpenAiKey(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
                 />
               </div>
