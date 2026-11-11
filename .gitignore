@@ -40,3 +40,4 @@ data/projects/*
 .DS_Store
 logs/service.out
 logs/service.err
+.vercel

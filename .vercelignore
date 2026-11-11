@@ -1,0 +1,15 @@
+.git
+.venv
+tests
+ultron
+main.py
+setup.sh
+Makefile
+pyproject.toml
+requirements.txt
+requirements-dev.txt
+data
+logs
+packaging
+assets
+docs
