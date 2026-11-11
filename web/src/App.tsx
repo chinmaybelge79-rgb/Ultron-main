@@ -12,6 +12,8 @@ interface Message {
   text: string;
   time: string;
   sources?: string[];
+  provider?: string;
+  model?: string;
 }
 
 export default function App() {
@@ -45,7 +47,7 @@ export default function App() {
   const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem('ultron_openrouter_key') || '');
   const [openAiKey, setOpenAiKey] = useState(() => localStorage.getItem('ultron_openai_key') || '');
   const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('ultron_gemini_key') || '');
-  const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('ultron_elevenlabs_key') || '713f57a0b5d0d520c4241efe1cd48f5641c230d3f44b70dcb3f27d72d7da8d34');
+  const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('ultron_elevenlabs_key') || '');
   const [voiceId, setVoiceId] = useState(() => localStorage.getItem('ultron_voice_id') || 'gBUMIvE4QAMyPIru0aFd');
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -69,10 +71,10 @@ export default function App() {
     setTimeout(() => {
       setSaveSuccess(false);
       setShowConfig(false);
-    }, 900);
+    }, 700);
   };
 
-  // High-Quality Ultra-Deep Male Vocal Output (ElevenLabs with WebSpeech fallback)
+  // Ultra-Deep Male Vocal Output (ElevenLabs when valid key provided, else WebSpeech Ultra-Deep Bass)
   const speakText = async (textToSpeak: string) => {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -90,8 +92,8 @@ export default function App() {
 
     if (!clean) return;
 
-    // Try ElevenLabs Ultra-Deep Voice first
-    if (elevenLabsKey.trim()) {
+    // Check if user has an ElevenLabs key
+    if (elevenLabsKey.trim().startsWith('sk_') || elevenLabsKey.trim().length > 20) {
       try {
         setIsSpeaking(true);
         const res = await fetch('/api/tts', {
@@ -120,11 +122,11 @@ export default function App() {
           return;
         }
       } catch (e) {
-        console.warn("ElevenLabs audio stream failed, falling back to local synthesis:", e);
+        console.warn("ElevenLabs failed, using ultra deep fallback:", e);
       }
     }
 
-    // Fallback: Web Speech API tuned to ultra-deep pitch
+    // Always vocalize with the browser's ultra deep male voice
     fallbackWebSpeech(clean);
   };
 
@@ -138,7 +140,7 @@ export default function App() {
     }) || voices[0];
 
     if (deepVoice) utterance.voice = deepVoice;
-    utterance.pitch = 0.55; // Ultra deep bass
+    utterance.pitch = 0.52; // Ultra deep authoritative baritone
     utterance.rate = 0.94;
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
@@ -157,7 +159,7 @@ export default function App() {
     setIsSpeaking(false);
   };
 
-  // Push-to-Talk Mic with explicit browser permission
+  // Push-to-Talk Mic
   const toggleListening = async () => {
     if (isListening) {
       if (recognitionRef.current) {
@@ -178,7 +180,7 @@ export default function App() {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach(t => t.stop());
       }
-    } catch (e) {
+    } catch {
       alert("Microphone permission denied. Please allow microphone access in your browser settings.");
       return;
     }
@@ -230,9 +232,9 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      let mappedModel = 'meta-llama/llama-3.3-70b-instruct:free';
+      let mappedModel = 'meta-llama/llama-3.3-70b-instruct';
       if (activeModel.includes('Claude')) mappedModel = 'anthropic/claude-3.5-sonnet';
-      if (activeModel.includes('GPT')) mappedModel = 'openai/gpt-4o';
+      if (activeModel.includes('GPT')) mappedModel = 'openai/gpt-4o-mini';
       if (activeModel.includes('Gemini')) mappedModel = 'google/gemini-2.0-flash-exp:free';
 
       const res = await fetch('/api/chat', {
@@ -249,14 +251,16 @@ export default function App() {
       });
 
       const data = await res.json();
-      const reply = data.reply || "Task complete.";
+      const reply = data.reply || "Command executed.";
 
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'ultron',
         text: reply,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        sources: textToSend.toLowerCase().includes('news') ? ['Reuters', 'Bloomberg', 'Financial Times', '+2 more'] : undefined
+        sources: textToSend.toLowerCase().includes('news') ? ['Reuters', 'Bloomberg', 'Financial Times', '+2 more'] : undefined,
+        provider: data.provider,
+        model: data.model
       };
 
       setMessages(prev => [...prev, botMsg]);
@@ -651,7 +655,7 @@ export default function App() {
             </div>
             <div>
               <div className="text-[10px] text-slate-400 font-medium">Voice Profile</div>
-              <div className="text-xs font-semibold text-slate-900">Ultron (Deep Male)</div>
+              <div className="text-xs font-semibold text-slate-900">Ultron (Ultra-Deep Male)</div>
             </div>
           </div>
 
@@ -703,7 +707,7 @@ export default function App() {
 
       </aside>
 
-      {/* 4. AI CONFIG MODAL (Clean, with SUBMIT / SAVE BUTTON & ALL API KEYS) */}
+      {/* 4. AI CONFIG MODAL */}
       {showConfig && (
         <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
@@ -726,7 +730,7 @@ export default function App() {
               {/* OpenRouter API Key */}
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  OpenRouter API Key <span className="text-slate-400 font-normal">(Powers Llama, Claude, etc.)</span>
+                  OpenRouter API Key <span className="text-slate-400 font-normal">(Powers Llama 3.3, Claude, Gemini)</span>
                 </label>
                 <input
                   type="password"
@@ -740,11 +744,11 @@ export default function App() {
               {/* OpenAI API Key */}
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  OpenAI API Key <span className="text-slate-400 font-normal">(Optional for GPT-4o)</span>
+                  OpenAI API Key <span className="text-slate-400 font-normal">(Optional for direct GPT-4o)</span>
                 </label>
                 <input
                   type="password"
-                  placeholder="sk-..."
+                  placeholder="sk-proj-..."
                   value={openAiKey}
                   onChange={(e) => setOpenAiKey(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
@@ -754,7 +758,7 @@ export default function App() {
               {/* Google Gemini API Key */}
               <div>
                 <label className="block text-slate-700 font-medium mb-1">
-                  Google Gemini API Key <span className="text-slate-400 font-normal">(Optional)</span>
+                  Google Gemini API Key <span className="text-slate-400 font-normal">(Optional for direct Gemini)</span>
                 </label>
                 <input
                   type="password"
@@ -768,15 +772,18 @@ export default function App() {
               {/* ElevenLabs API Key */}
               <div className="pt-2 border-t border-slate-100">
                 <label className="block text-slate-700 font-medium mb-1">
-                  ElevenLabs API Key <span className="text-slate-400 font-normal">(Ultra-Deep Voice)</span>
+                  ElevenLabs API Key <span className="text-slate-400 font-normal">(Starts with sk_...)</span>
                 </label>
                 <input
                   type="password"
-                  placeholder="713f57a0b5..."
+                  placeholder="sk_..."
                   value={elevenLabsKey}
                   onChange={(e) => setElevenLabsKey(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:outline-none transition-all font-mono text-xs"
                 />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Note: In ElevenLabs settings, copy the Secret Key (starts with sk_), not the Key ID.
+                </span>
               </div>
 
               {/* ElevenLabs Voice ID */}
@@ -809,7 +816,7 @@ export default function App() {
                   {saveSuccess ? (
                     <>
                       <Check className="w-3.5 h-3.5" />
-                      <span>Saved & Connected</span>
+                      <span>Saved & Active</span>
                     </>
                   ) : (
                     <span>Save & Continue</span>
