@@ -16,8 +16,6 @@ export default async function handler(req: Request) {
 
   try {
     let apiKey = '';
-    
-    // Check Authorization header, query parameter, or POST body
     const authHeader = req.headers.get('Authorization') || req.headers.get('xi-api-key');
     if (authHeader) {
       apiKey = authHeader.replace(/^Bearer\s+/i, '').trim();
@@ -39,39 +37,41 @@ export default async function handler(req: Request) {
       apiKey = process.env.ELEVENLABS_API_KEY || '';
     }
 
-    if (!apiKey.trim()) {
-      return new Response(JSON.stringify({ error: 'ElevenLabs API key is required to fetch voices' }), {
-        status: 400,
+    // Always fetch the live public/account ElevenLabs voices library
+    const headers: Record<string, string> = {};
+    if (apiKey.trim() && apiKey.trim().startsWith('sk_')) {
+      headers['xi-api-key'] = apiKey.trim();
+    }
+
+    const res = await fetch('https://api.elevenlabs.io/v1/voices', { headers });
+
+    if (res.ok) {
+      const data = await res.json();
+      const rawVoices = data.voices || [];
+      
+      const voices = rawVoices.map((v: any) => ({
+        voice_id: v.voice_id,
+        name: v.name,
+        category: v.category || 'general',
+        gender: v.labels?.gender || 'unknown',
+        description: v.labels?.description || v.labels?.descriptive || v.description || '',
+        preview_url: v.preview_url || '',
+      }));
+
+      return new Response(JSON.stringify({ 
+        status: 'success',
+        source: apiKey.trim().startsWith('sk_') ? 'ElevenLabs Account Library' : 'ElevenLabs Global Library',
+        voices 
+      }), {
+        status: 200,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
       });
     }
 
-    // Call ElevenLabs API to fetch all voices available for this key
-    const res = await fetch('https://api.elevenlabs.io/v1/voices', {
-      headers: {
-        'xi-api-key': apiKey.trim(),
-      },
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      return new Response(errText, {
-        status: res.status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
-    }
-
-    const data = await res.json();
-    const voices = (data.voices || []).map((v: any) => ({
-      voice_id: v.voice_id,
-      name: v.name,
-      category: v.category || 'general',
-      description: v.labels?.description || v.labels?.accent || '',
-      preview_url: v.preview_url || '',
-    }));
-
-    return new Response(JSON.stringify({ voices }), {
-      status: 200,
+    // Return structured error if ElevenLabs rejected
+    const errText = await res.text();
+    return new Response(errText, {
+      status: res.status,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
 
